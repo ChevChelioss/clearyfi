@@ -228,3 +228,98 @@ class WeatherAnalyzer:
      # ----------------------------------------------------------------------
      # New integration
      # ----------------------------------------------------------------------
+    def get_current_weather(self) -> Dict[str, Any]:
+        """Получает текущую погоду (первый период прогноза)"""
+        if not self.raw or 'list' not in self.raw or len(self.raw['list']) == 0:
+            return {}
+
+        current = self.raw['list'][0]
+        main_data = current.get('main', {})
+
+        # Температура уже в °C (благодаря units=metric в запросе)
+        temperature = main_data.get('temp', 0)
+        feels_like = main_data.get('feels_like', 0)
+
+        # Преобразуем давление из гПа в мм рт. ст.
+        pressure_hpa = main_data.get('pressure', 0)
+        pressure_mmhg = round(pressure_hpa * 0.750062, 1)
+
+        return {
+            'temperature': round(temperature, 1),
+            'feels_like': round(feels_like, 1),
+            'humidity': main_data.get('humidity', 0),
+            'pressure': pressure_mmhg,
+            'wind_speed': current.get('wind', {}).get('speed', 0),
+            'weather': current['weather'][0]['description'] if current.get('weather') else 'Неизвестно',
+            'weather_main': current['weather'][0]['main'] if current.get('weather') else 'Clear',
+            'icon': current['weather'][0]['icon'] if current.get('weather') else '01d'
+        }
+
+    def get_today_forecast(self) -> Dict[str, Any]:
+        """Получает прогноз на сегодня"""
+        if not self.daily or len(self.daily) == 0:
+            return {}
+        return self.daily[0]
+
+    def get_tomorrow_forecast(self) -> Dict[str, Any]:
+        """Получает прогноз на завтра"""
+        if not self.daily or len(self.daily) < 2:
+            return {}
+        return self.daily[1]
+
+    def get_weather_alerts(self) -> List[str]:
+        """Анализирует прогноз для выявления предупреждений"""
+        alerts = []
+
+        if not self.raw or 'list' not in self.raw:
+            return alerts
+
+        # Анализируем ближайшие 12 часов (4 периода по 3 часа)
+        for period in self.raw.get('list', [])[:4]:
+            weather_main = period.get('weather', [{}])[0].get('main', '').lower()
+            temp = period.get('main', {}).get('temp', 0)
+            wind_speed = period.get('wind', {}).get('speed', 0)
+
+            # Проверяем различные опасные условия
+            if 'rain' in weather_main:
+                alerts.append("🌧️ Ожидается дождь")
+            elif 'snow' in weather_main:
+                alerts.append("❄️ Ожидается снег")
+            elif temp < 0:
+                alerts.append("🧊 Температура ниже 0°C - возможен гололед!")
+            elif 'thunderstorm' in weather_main:
+                alerts.append("⚡ Возможна гроза")
+            elif wind_speed > 10:
+                alerts.append("💨 Сильный ветер")
+
+        # Убираем дубликаты
+        return list(set(alerts))
+
+    def get_detailed_recommendation(self) -> str:
+        """Детальная рекомендация по мойке с обоснованием"""
+        best_day = self.get_best_wash_day()
+
+        if not best_day:
+            return "❌ Не удалось определить лучший день для мойки"
+
+        date = best_day.get('date', 'Неизвестно')
+        temp = best_day.get('temp', 0)
+        humidity = best_day.get('humidity', 0)
+        wind = best_day.get('wind', 0)
+        conditions = ', '.join(best_day.get('conditions', ['ясно']))
+
+        recommendation = f"✅ *Лучший день для мойки: {date}*\n\n"
+        recommendation += f"• 🌡 Температура: {temp:.1f}°C\n"
+        recommendation += f"• 💧 Влажность: {humidity}%\n"
+        recommendation += f"• 💨 Ветер: {wind} м/с\n"
+        recommendation += f"• ☁️ Условия: {conditions}\n\n"
+
+        # Добавляем обоснование
+        if temp > 15:
+            recommendation += "_Отличные условия - тепло и сухо_"
+        elif temp > 5:
+            recommendation += "_Хорошие условия, но может быть прохладно_"
+        else:
+            recommendation += "_Прохладно, но мойка возможна в теплом боксе_"
+
+        return recommendation
