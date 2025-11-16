@@ -24,3 +24,15 @@ cd clearyfi
 python -m venv clearyfi_env
 source clearyfi_env/bin/activate
 pip install -r requirements.txt
+
+## ⚙️ Настройка
+
+1. Установите зависимости: `pip install -r requirements.txt`
+2. Скопируйте `.env.example` в `.env`: `cp .env.example .env`
+3. Заполните `.env` файл своими API ключами
+4. Запустите бота: `python telegram_bot.py`
+
+## 🔐 Получение API ключей
+
+- **Telegram Bot Token**: Создайте бота через [@BotFather](https://t.me/BotFather)
+- **OpenWeatherMap API**: Получите бесплатный ключ на [openweathermap.org](https://openweathermap.org/api)
