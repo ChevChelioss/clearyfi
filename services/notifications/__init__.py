@@ -1,7 +1,12 @@
-# services/notifications/__init__.py
 """
 Модуль для работы с уведомлениями
 """
-from .message_builder import NotificationMessageBuilder
 
-__all__ = ['NotificationMessageBuilder']
+from .message_builder import NotificationMessageBuilder
+from .notification_daemon import NotificationDaemon, run_notification_daemon
+
+__all__ = [
+    'NotificationMessageBuilder',
+    'NotificationDaemon', 
+    'run_notification_daemon'
+]

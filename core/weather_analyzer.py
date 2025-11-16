@@ -1,350 +1,495 @@
-# core/weather_analyzer.py
+#!/usr/bin/env python3
+"""
+Анализатор погодных данных ClearyFi
+Анализирует прогноз погоды и предоставляет рекомендации по мойке автомобиля
+"""
 
-from typing import List, Dict, Any, Optional
-import statistics
-from events import (
-    RainEvent, SnowEvent, MeltEvent, MudEvent,
-    TemperatureDropEvent, DryWindowEvent
-)
+import logging
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional, Tuple, Any
+from dataclasses import dataclass
+
+# Настройка логирования
+logger = logging.getLogger('WeatherAnalyzer')
+
+
+@dataclass
+class WeatherDay:
+    """Класс для хранения структурированных данных о погоде за день"""
+    date: str
+    temperature_avg: float
+    temperature_min: float
+    temperature_max: float
+    humidity_avg: float
+    wind_speed_avg: float
+    conditions: List[str]
+    rain_probability: float
+    wash_score: float = 0.0
+    wash_recommendation: str = ""
+
 
 class WeatherAnalyzer:
     """
-    Центральный модуль анализа погоды.
-    Принимает прогноз погоды на 5+ дней и возвращает:
-    - лучший день для мойки
-    - оценку рисков
-    - описание погодных условий
+    Анализатор погодных данных для определения оптимальных дней для мойки автомобиля.
+    Использует улучшенные алгоритмы оценки погодных условий.
     """
-
-    def __init__(self, forecast_data: Dict[str, Any]):
+    
+    def __init__(self, weather_data: Dict[str, Any]):
         """
-        :param forecast_data: Сырые данные прогноза от API
+        Инициализация анализатора с данными о погоде.
+        
+        Args:
+            weather_data: Словарь с данными о погоде от WeatherAPIClient
         """
-        self.raw = forecast_data
-        self.daily = self._normalize_daily_data()
+        self.raw_data = weather_data
+        self.daily_data: List[WeatherDay] = []
+        self.current_weather: Dict[str, Any] = {}
+        
+        # Параметры для оценки условий мойки (можно настраивать)
+        self.wash_thresholds = {
+            'min_temperature': -2.0,      # Минимальная температура для мойки
+            'max_humidity': 90.0,         # Максимальная влажность
+            'max_wind_speed': 12.0,       # Максимальная скорость ветра
+            'max_rain_probability': 0.0,  # Максимальная вероятность дождя
+            'ideal_temperature_min': 10.0, # Идеальный диапазон температур
+            'ideal_temperature_max': 25.0,
+            'ideal_humidity_max': 75.0,   # Идеальная максимальная влажность
+        }
+        
+        self._process_weather_data()
+        logger.info(f"WeatherAnalyzer инициализирован с данными для {len(self.daily_data)} дней")
 
-    # ----------------------------------------------------------------------
-    # 1. НОРМАЛИЗАЦИЯ ДАННЫХ
-    # ----------------------------------------------------------------------
-
-    def _normalize_daily_data(self) -> List[Dict[str, Any]]:
+    def _process_weather_data(self) -> None:
         """
-        Приводит данные API к нормальной структуре и добавляет вспомогательные флаги:
-        - date
-        - temp (avg)
-        - humidity (avg)
-        - wind (avg)
-        - rain_prob (0/1)
-        - conditions (uniq list)
-        - temp_delta (разница с предыдущим днём, °C)
-        - temp_drop (bool если падение <= -5°C)
-        - melt_flag (bool если ранее был снег и сейчас temp > 0)
-        - mud_flag (эвристика грязи)
-        - dry_window (bool если нет осадков и влажность низкая)
+        Обрабатывает сырые данные погоды и преобразует их в структурированный формат.
         """
-        if "list" not in self.raw:
-            return []
+        try:
+            # Обрабатываем ежедневные данные
+            if 'daily_data' in self.raw_data:
+                for day_data in self.raw_data['daily_data']:
+                    weather_day = WeatherDay(
+                        date=day_data.get('date', ''),
+                        temperature_avg=day_data.get('temp_avg', 0),
+                        temperature_min=day_data.get('temp_min', 0),
+                        temperature_max=day_data.get('temp_max', 0),
+                        humidity_avg=day_data.get('humidity_avg', 0),
+                        wind_speed_avg=day_data.get('wind_avg', 0),
+                        conditions=day_data.get('conditions', []),
+                        rain_probability=day_data.get('rain_probability', 0)
+                    )
+                    
+                    # Рассчитываем оценку для мойки
+                    weather_day.wash_score = self._calculate_wash_score(weather_day)
+                    weather_day.wash_recommendation = self._get_wash_recommendation_text(weather_day)
+                    
+                    self.daily_data.append(weather_day)
+            
+            # Обрабатываем текущую погоду
+            self._process_current_weather()
+            
+            logger.debug(f"Обработано {len(self.daily_data)} дней погодных данных")
+            
+        except Exception as e:
+            logger.error(f"Ошибка обработки погодных данных: {e}")
 
-        # группируем по дате
-        normalized = {}
-        for block in self.raw["list"]:
-            dt_txt = block.get("dt_txt")
-            if not dt_txt:
-                # иногда есть поле dt (unix); fallback
-                ts = block.get("dt")
-                if ts:
-                    import datetime
-                    dt_txt = datetime.datetime.utcfromtimestamp(ts).strftime("%Y-%m-%d 00:00:00")
-                else:
-                    continue
+    def _process_current_weather(self) -> None:
+        """
+        Обрабатывает данные о текущей погоде.
+        """
+        try:
+            # Если есть данные о текущей погоде, обрабатываем их
+            if 'current_weather' in self.raw_data:
+                self.current_weather = self.raw_data['current_weather']
+            else:
+                # Создаем текущую погоду на основе первого дня прогноза
+                if self.daily_data:
+                    today = self.daily_data[0]
+                    self.current_weather = {
+                        'temperature': today.temperature_avg,
+                        'feels_like': today.temperature_avg,
+                        'humidity': today.humidity_avg,
+                        'pressure': 1013.25,  # Стандартное давление
+                        'wind_speed': today.wind_speed_avg,
+                        'weather': ', '.join(today.conditions),
+                        'city': self.raw_data.get('city', 'Unknown'),
+                        'timestamp': datetime.now().timestamp()
+                    }
+                    
+        except Exception as e:
+            logger.error(f"Ошибка обработки текущей погоды: {e}")
 
-            day = dt_txt.split(" ")[0]
-            entry = normalized.setdefault(day, {
-                "temps": [],
-                "humidity": [],
-                "wind": [],
-                "conditions": [],
-                "rain_vol": []
-            })
+    def _calculate_wash_score(self, day: WeatherDay) -> float:
+        """
+        Рассчитывает оценку пригодности дня для мойки автомобиля (0-100).
+        
+        Args:
+            day: Данные о погоде за день
+            
+        Returns:
+            Оценка от 0 (плохо) до 100 (отлично)
+        """
+        try:
+            score = 100.0  # Начинаем с идеального счета
+            
+            # 1. Штраф за вероятность дождя (самый важный фактор)
+            rain_penalty = day.rain_probability * 2.0  # Усиленный штраф за дождь
+            score -= min(rain_penalty, 100)  # Максимальный штраф 100
+            
+            if score <= 0:
+                return 0.0
+            
+            # 2. Штраф за низкую температуру
+            if day.temperature_avg < self.wash_thresholds['min_temperature']:
+                score -= 80  # Сильный штраф за мороз
+            elif day.temperature_avg < 0:
+                score -= 60
+            elif day.temperature_avg < 5:
+                score -= 30
+            elif day.temperature_avg < 10:
+                score -= 15
+            
+            if score <= 0:
+                return 0.0
+            
+            # 3. Штраф за высокую влажность
+            if day.humidity_avg > self.wash_thresholds['max_humidity']:
+                score -= 50
+            elif day.humidity_avg > 85:
+                score -= 25
+            elif day.humidity_avg > 75:
+                score -= 10
+            
+            if score <= 0:
+                return 0.0
+            
+            # 4. Штраф за сильный ветер
+            if day.wind_speed_avg > self.wash_thresholds['max_wind_speed']:
+                score -= 40
+            elif day.wind_speed_avg > 8:
+                score -= 20
+            elif day.wind_speed_avg > 5:
+                score -= 5
+            
+            # 5. Бонус за идеальные условия
+            ideal_conditions = (
+                day.temperature_avg >= self.wash_thresholds['ideal_temperature_min'] and
+                day.temperature_avg <= self.wash_thresholds['ideal_temperature_max'] and
+                day.humidity_avg <= self.wash_thresholds['ideal_humidity_max'] and
+                day.wind_speed_avg < 5 and
+                day.rain_probability == 0
+            )
+            
+            if ideal_conditions:
+                score = min(score + 10, 100)  # Бонус за идеальные условия
+            
+            return max(0.0, min(100.0, score))
+            
+        except Exception as e:
+            logger.error(f"Ошибка расчета оценки мойки: {e}")
+            return 0.0
 
-            # collect
-            m = block.get("main", {})
-            entry["temps"].append(m.get("temp", 0))
-            entry["humidity"].append(m.get("humidity", 0))
-            entry["wind"].append(block.get("wind", {}).get("speed", 0))
+    def _get_wash_recommendation_text(self, day: WeatherDay) -> str:
+        """
+        Генерирует текстовую рекомендацию для дня на основе оценки.
+        
+        Args:
+            day: Данные о погоде за день
+            
+        Returns:
+            Текстовая рекомендация
+        """
+        score = day.wash_score
+        
+        if score >= 90:
+            return "Идеальный день для мойки"
+        elif score >= 75:
+            return "Отличный день для мойки"
+        elif score >= 60:
+            return "Хороший день для мойки"
+        elif score >= 40:
+            return "Условно подходит для мойки"
+        elif score >= 20:
+            return "Не рекомендуется для мойки"
+        else:
+            return "Не подходит для мойки"
 
-            for w in block.get("weather", []):
-                entry["conditions"].append(w.get("main", ""))
-
-            # rain/snow volumes
-            rain = 0
-            snow = 0
-            if isinstance(block.get("rain"), dict):
-                rain = block["rain"].get("3h", 0) or block["rain"].get("1h", 0) or 0
-            if isinstance(block.get("snow"), dict):
-                snow = block["snow"].get("3h", 0) or block["snow"].get("1h", 0) or 0
-            entry["rain_vol"].append(rain + snow)
-
-        # собираем в список с вычислениями
-        dates = sorted(normalized.keys())
-        result = []
-        prev_temp = None
-        prev_had_snow = False
-
-        for date in dates:
-            v = normalized[date]
-            avg_temp = round((sum(v["temps"]) / len(v["temps"])) if v["temps"] else 0, 1)
-            avg_humidity = round((sum(v["humidity"]) / len(v["humidity"])) if v["humidity"] else 0, 1)
-            avg_wind = round((sum(v["wind"]) / len(v["wind"])) if v["wind"] else 0, 1)
-            total_precip = sum(v["rain_vol"]) if v["rain_vol"] else 0
-            rain_prob = 1 if total_precip > 0 else 0
-            conds = list({c for c in v["conditions"] if c})  # unique non-empty
-
-            # temp_delta relative to previous day
-            temp_delta = None
-            temp_drop = False
-            if prev_temp is not None:
-                temp_delta = round(avg_temp - prev_temp, 1)
-                if temp_delta <= -5:
-                    temp_drop = True
-
-            # melt_flag: если ранее (предыдущий день) был снег и текущ temp > 0
-            melt_flag = False
-            if prev_had_snow and avg_temp > 0:
-                melt_flag = True
-
-            # mud_flag heuristic: высокий риск грязи если влажность высокая и были осадки или melt_flag
-            mud_flag = False
-            if (avg_humidity >= 75 and rain_prob == 1) or melt_flag:
-                mud_flag = True
-
-            # dry_window: если нет осадков и влажность невысока
-            dry_window = False
-            if rain_prob == 0 and avg_humidity < 70:
-                dry_window = True
-
-            # save whether this day had snow (for next day's melt detection)
-            had_snow = any(("snow" in c.lower() for c in v["conditions"]))
-
-            result.append({
-                "date": date,
-                "temp": avg_temp,
-                "humidity": avg_humidity,
-                "wind": avg_wind,
-                "rain_prob": rain_prob,
-                "conditions": conds,
-                "temp_delta": temp_delta,
-                "temp_drop": temp_drop,
-                "melt_flag": melt_flag,
-                "mud_flag": mud_flag,
-                "dry_window": dry_window,
-                "had_snow": had_snow
-            })
-
-            prev_temp = avg_temp
-            prev_had_snow = had_snow
-
-        return result
-
-    # ----------------------------------------------------------------------
-    # 2. ОСНОВНАЯ ЛОГИКА АНАЛИЗА
-    # ----------------------------------------------------------------------
+    def get_daily_summary(self) -> List[Dict[str, Any]]:
+        """
+        Возвращает сводку погоды по дням в формате для построителя сообщений.
+        
+        Returns:
+            Список словарей с ежедневной сводкой
+        """
+        summary = []
+        
+        for day in self.daily_data:
+            day_summary = {
+                'date': day.date,
+                'temp': day.temperature_avg,
+                'temp_min': day.temperature_min,
+                'temp_max': day.temperature_max,
+                'humidity': day.humidity_avg,
+                'wind': day.wind_speed_avg,
+                'conditions': day.conditions,
+                'rain_prob': day.rain_probability,
+                'wash_score': day.wash_score,
+                'wash_recommendation': day.wash_recommendation
+            }
+            summary.append(day_summary)
+        
+        logger.debug(f"Сгенерирована сводка для {len(summary)} дней")
+        return summary
 
     def get_best_wash_day(self) -> Optional[Dict[str, Any]]:
         """
-        Возвращает ЛУЧШИЙ день для мойки на основе СМЯГЧЕННЫХ критериев:
-        - отсутствие дождя/снега
-        - влажность < 90%
-        - температура > -2°C
-        - ветер < 12 м/с
+        Находит лучший день для мойки автомобиля на основе оценок.
+        
+        Returns:
+            Словарь с данными лучшего дня или None, если подходящих дней нет
         """
-
-        candidates = []
-
-        for day in self.daily:
-            # 🔄 СМЯГЧЕННЫЕ КРИТЕРИИ
-            if (
-                day["rain_prob"] == 0 and      # Нет осадков
-                day["humidity"] < 90 and       # Влажность не слишком высокая
-                day["temp"] > -2 and           # Не слишком холодно
-                day["wind"] < 12               # Не слишком ветрено
-            ):
-                # Рассчитываем балл для сортировки (чем выше - тем лучше)
-                day_score = 0
-
-                # Температурный балл: чем теплее - тем лучше
-                if day["temp"] >= 10:
-                    day_score += 3
-                elif day["temp"] >= 5:
-                    day_score += 2
-                elif day["temp"] >= 0:
-                    day_score += 1
-
-                # Влажностный балл: чем суше - тем лучше
-                if day["humidity"] < 70:
-                    day_score += 2
-                elif day["humidity"] < 80:
-                    day_score += 1
-
-                # Ветровой балл: чем слабее ветер - тем лучше
-                if day["wind"] < 5:
-                    day_score += 2
-                elif day["wind"] < 8:
-                    day_score += 1
-
-                day["wash_score"] = day_score
-                candidates.append(day)
-
-        if not candidates:
+        try:
+            if not self.daily_data:
+                return None
+            
+            # Фильтруем дни с минимальным порогом оценки
+            suitable_days = [
+                day for day in self.daily_data 
+                if day.wash_score >= 40  # Минимальный порог для рекомендации
+            ]
+            
+            if not suitable_days:
+                logger.info("Не найдено подходящих дней для мойки")
+                return None
+            
+            # Выбираем день с наивысшей оценкой
+            best_day = max(suitable_days, key=lambda x: x.wash_score)
+            
+            # Если лучшая оценка слишком низкая, не рекомендуем
+            if best_day.wash_score < 50:
+                logger.info(f"Лучший день имеет низкую оценку: {best_day.wash_score}")
+                return None
+            
+            best_day_data = {
+                'date': best_day.date,
+                'temp': best_day.temperature_avg,
+                'humidity': best_day.humidity_avg,
+                'wind': best_day.wind_speed_avg,
+                'conditions': best_day.conditions,
+                'rain_prob': best_day.rain_probability,
+                'wash_score': best_day.wash_score,
+                'recommendation': best_day.wash_recommendation
+            }
+            
+            logger.info(f"Найден лучший день для мойки: {best_day.date} (оценка: {best_day.wash_score})")
+            return best_day_data
+            
+        except Exception as e:
+            logger.error(f"Ошибка поиска лучшего дня для мойки: {e}")
             return None
 
-        # Сортируем по баллу (высокий лучше), затем по ветру (слабый лучше)
-        candidates.sort(key=lambda x: (x["wash_score"], -x["wind"]), reverse=True)
-        return candidates[0]
-
-    # ----------------------------------------------------------------------
-
-    def get_daily_summary(self) -> List[Dict[str, Any]]:
-        """Возвращает краткую сводку по каждому дню."""
-        return self.daily
-
-    # ----------------------------------------------------------------------
-
-
-	# ----------------------------------------------------------------------
-    # Event integration
-    # ----------------------------------------------------------------------
-    def get_day_events(self, day: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """
-        Запускает все event-декторы на одном дне и возвращает список
-        с результатами: [{'name':..., 'message':...}, ...]
-        """
-        detectors = [
-            RainEvent(), SnowEvent(), MeltEvent(),
-            MudEvent(), TemperatureDropEvent(), DryWindowEvent()
-        ]
-        triggered = []
-        for d in detectors:
-            try:
-                if d.is_triggered(day):
-                    triggered.append({"name": d.name, "message": d.get_message(day)})
-            except Exception as e:
-                # надёжность: не ломать весь анализ из-за одного детектора
-                triggered.append({"name": d.name, "error": str(e)})
-        return triggered
-
-
-    def get_recommendation(self) -> str:
-        """Готовая рекомендация пользователю."""
-
-        day = self.get_best_wash_day()
-
-        if not day:
-            return "❌ Ближайшие дни не подходят для мойки — погода нестабильна."
-
-        return (
-            f"✔ Идеальный день для мойки: {day['date']}\n"
-            f"• Температура: {day['temp']}°C\n"
-            f"• Влажность: {day['humidity']}%\n"
-            f"• Ветер: {day['wind']} м/с\n"
-            f"• Условия: {', '.join(day['conditions'])}"
-        )
-
-     # ----------------------------------------------------------------------
-     # New integration
-     # ----------------------------------------------------------------------
     def get_current_weather(self) -> Dict[str, Any]:
-        """Получает текущую погоду (первый период прогноза)"""
-        if not self.raw or 'list' not in self.raw or len(self.raw['list']) == 0:
-            return {}
-
-        current = self.raw['list'][0]
-        main_data = current.get('main', {})
-
-        # Температура уже в °C (благодаря units=metric в запросе)
-        temperature = main_data.get('temp', 0)
-        feels_like = main_data.get('feels_like', 0)
-
-        # Преобразуем давление из гПа в мм рт. ст.
-        pressure_hpa = main_data.get('pressure', 0)
-        pressure_mmhg = round(pressure_hpa * 0.750062, 1)
-
-        return {
-            'temperature': round(temperature, 1),
-            'feels_like': round(feels_like, 1),
-            'humidity': main_data.get('humidity', 0),
-            'pressure': pressure_mmhg,
-            'wind_speed': current.get('wind', {}).get('speed', 0),
-            'weather': current['weather'][0]['description'] if current.get('weather') else 'Неизвестно',
-            'weather_main': current['weather'][0]['main'] if current.get('weather') else 'Clear',
-            'icon': current['weather'][0]['icon'] if current.get('weather') else '01d'
-        }
-
-    def get_today_forecast(self) -> Dict[str, Any]:
-        """Получает прогноз на сегодня"""
-        if not self.daily or len(self.daily) == 0:
-            return {}
-        return self.daily[0]
-
-    def get_tomorrow_forecast(self) -> Dict[str, Any]:
-        """Получает прогноз на завтра"""
-        if not self.daily or len(self.daily) < 2:
-            return {}
-        return self.daily[1]
+        """
+        Возвращает данные о текущей погоде.
+        
+        Returns:
+            Словарь с данными текущей погоды
+        """
+        return self.current_weather
 
     def get_weather_alerts(self) -> List[str]:
-        """Анализирует прогноз для выявления предупреждений"""
+        """
+        Анализирует погодные данные и возвращает предупреждения.
+        
+        Returns:
+            Список строк с предупреждениями
+        """
         alerts = []
+        
+        try:
+            # Проверяем текущую погоду и ближайшие дни
+            for i, day in enumerate(self.daily_data[:2]):  # Сегодня и завтра
+                day_label = "Сегодня" if i == 0 else "Завтра"
+                
+                # Предупреждение о дожде
+                if day.rain_probability > 50:
+                    alerts.append(f"⚠️ {day_label} ожидается сильный дождь ({day.rain_probability}%)")
+                elif day.rain_probability > 20:
+                    alerts.append(f"🌧️ {day_label} возможен дождь ({day.rain_probability}%)")
+                
+                # Предупреждение о низкой температуре
+                if day.temperature_min < -5:
+                    alerts.append(f"🧊 {day_label} сильный мороз до {day.temperature_min:.0f}°C")
+                elif day.temperature_min < 0:
+                    alerts.append(f"❄️ {day_label} возможны заморозки до {day.temperature_min:.0f}°C")
+                
+                # Предупреждение о сильном ветре
+                if day.wind_speed_avg > 15:
+                    alerts.append(f"💨 {day_label} очень сильный ветер {day.wind_speed_avg:.1f} м/с")
+                elif day.wind_speed_avg > 10:
+                    alerts.append(f"💨 {day_label} сильный ветер {day.wind_speed_avg:.1f} м/с")
+                
+                # Предупреждение о высокой влажности
+                if day.humidity_avg > 90:
+                    alerts.append(f"💧 {day_label} очень высокая влажность {day.humidity_avg:.0f}%")
+            
+            # Уникальные предупреждения
+            alerts = list(set(alerts))
+            logger.debug(f"Сгенерировано {len(alerts)} предупреждений")
+            
+        except Exception as e:
+            logger.error(f"Ошибка генерации предупреждений: {e}")
+        
+        return alerts
 
-        if not self.raw or 'list' not in self.raw:
-            return alerts
+    def get_today_forecast(self) -> Dict[str, Any]:
+        """
+        Возвращает детальный прогноз на сегодня.
+        
+        Returns:
+            Словарь с прогнозом на сегодня
+        """
+        if not self.daily_data:
+            return {}
+        
+        today = self.daily_data[0]
+        return {
+            'date': today.date,
+            'temperature': today.temperature_avg,
+            'temperature_range': f"{today.temperature_min:.0f}...{today.temperature_max:.0f}°C",
+            'humidity': today.humidity_avg,
+            'wind_speed': today.wind_speed_avg,
+            'conditions': today.conditions,
+            'rain_probability': today.rain_probability,
+            'wash_recommendation': today.wash_recommendation
+        }
 
-        # Анализируем ближайшие 12 часов (4 периода по 3 часа)
-        for period in self.raw.get('list', [])[:4]:
-            weather_main = period.get('weather', [{}])[0].get('main', '').lower()
-            temp = period.get('main', {}).get('temp', 0)
-            wind_speed = period.get('wind', {}).get('speed', 0)
+    def get_wash_analysis(self) -> Dict[str, Any]:
+        """
+        Возвращает детальный анализ условий для мойки.
+        
+        Returns:
+            Словарь с анализом условий мойки
+        """
+        analysis = {
+            'best_day': self.get_best_wash_day(),
+            'daily_scores': [],
+            'overall_conditions': 'unknown',
+            'recommendation_period': None
+        }
+        
+        # Анализируем оценки по дням
+        scores = [day.wash_score for day in self.daily_data]
+        
+        if scores:
+            analysis['average_score'] = sum(scores) / len(scores)
+            analysis['max_score'] = max(scores)
+            analysis['min_score'] = min(scores)
+            
+            # Определяем общие условия
+            if analysis['max_score'] >= 80:
+                analysis['overall_conditions'] = 'excellent'
+            elif analysis['max_score'] >= 60:
+                analysis['overall_conditions'] = 'good'
+            elif analysis['max_score'] >= 40:
+                analysis['overall_conditions'] = 'fair'
+            else:
+                analysis['overall_conditions'] = 'poor'
+            
+            # Рекомендуемый период для мойки
+            good_days = [day for day in self.daily_data if day.wash_score >= 60]
+            if len(good_days) >= 2:
+                analysis['recommendation_period'] = 'extended'
+            elif good_days:
+                analysis['recommendation_period'] = 'single'
+            else:
+                analysis['recommendation_period'] = 'none'
+        
+        # Детальные оценки по дням
+        for day in self.daily_data:
+            day_analysis = {
+                'date': day.date,
+                'wash_score': day.wash_score,
+                'recommendation': day.wash_recommendation,
+                'factors': self._analyze_wash_factors(day)
+            }
+            analysis['daily_scores'].append(day_analysis)
+        
+        return analysis
 
-            # Проверяем различные опасные условия
-            if 'rain' in weather_main:
-                alerts.append("🌧️ Ожидается дождь")
-            elif 'snow' in weather_main:
-                alerts.append("❄️ Ожидается снег")
-            elif temp < 0:
-                alerts.append("🧊 Температура ниже 0°C - возможен гололед!")
-            elif 'thunderstorm' in weather_main:
-                alerts.append("⚡ Возможна гроза")
-            elif wind_speed > 10:
-                alerts.append("💨 Сильный ветер")
-
-        # Убираем дубликаты
-        return list(set(alerts))
-
-    def get_detailed_recommendation(self) -> str:
-        """Детальная рекомендация по мойке с обоснованием"""
-        best_day = self.get_best_wash_day()
-
-        if not best_day:
-            return "❌ Не удалось определить лучший день для мойки"
-
-        date = best_day.get('date', 'Неизвестно')
-        temp = best_day.get('temp', 0)
-        humidity = best_day.get('humidity', 0)
-        wind = best_day.get('wind', 0)
-        conditions = ', '.join(best_day.get('conditions', ['ясно']))
-
-        recommendation = f"✅ *Лучший день для мойки: {date}*\n\n"
-        recommendation += f"• 🌡 Температура: {temp:.1f}°C\n"
-        recommendation += f"• 💧 Влажность: {humidity}%\n"
-        recommendation += f"• 💨 Ветер: {wind} м/с\n"
-        recommendation += f"• ☁️ Условия: {conditions}\n\n"
-
-        # Добавляем обоснование
-        if temp > 15:
-            recommendation += "_Отличные условия - тепло и сухо_"
-        elif temp > 5:
-            recommendation += "_Хорошие условия, но может быть прохладно_"
+    def _analyze_wash_factors(self, day: WeatherDay) -> List[str]:
+        """
+        Анализирует факторы, влияющие на оценку мойки для дня.
+        
+        Args:
+            day: Данные о погоде за день
+            
+        Returns:
+            Список факторов с описанием
+        """
+        factors = []
+        
+        # Анализ температуры
+        if day.temperature_avg >= self.wash_thresholds['ideal_temperature_min']:
+            factors.append("✅ Идеальная температура")
+        elif day.temperature_avg >= 5:
+            factors.append("⚠️ Прохладно, но можно мыть")
         else:
-            recommendation += "_Прохладно, но мойка возможна в теплом боксе_"
+            factors.append("❌ Слишком холодно для мойки")
+        
+        # Анализ влажности
+        if day.humidity_avg <= self.wash_thresholds['ideal_humidity_max']:
+            factors.append("✅ Нормальная влажность")
+        elif day.humidity_avg <= 85:
+            factors.append("⚠️ Повышенная влажность")
+        else:
+            factors.append("❌ Высокая влажность")
+        
+        # Анализ ветра
+        if day.wind_speed_avg < 5:
+            factors.append("✅ Слабый ветер")
+        elif day.wind_speed_avg < 10:
+            factors.append("⚠️ Умеренный ветер")
+        else:
+            factors.append("❌ Сильный ветер")
+        
+        # Анализ осадков
+        if day.rain_probability == 0:
+            factors.append("✅ Без осадков")
+        else:
+            factors.append(f"❌ Вероятность дождя {day.rain_probability}%")
+        
+        return factors
 
-        return recommendation
+    def update_thresholds(self, new_thresholds: Dict[str, float]) -> None:
+        """
+        Обновляет пороговые значения для оценки условий мойки.
+        
+        Args:
+            new_thresholds: Словарь с новыми пороговыми значениями
+        """
+        self.wash_thresholds.update(new_thresholds)
+        logger.info("Обновлены пороговые значения анализатора")
+        
+        # Пересчитываем оценки для всех дней
+        for day in self.daily_data:
+            day.wash_score = self._calculate_wash_score(day)
+            day.wash_recommendation = self._get_wash_recommendation_text(day)
+
+
+# Утилитарные функции для обратной совместимости
+def create_weather_analyzer(weather_data: Dict) -> WeatherAnalyzer:
+    """
+    Создает экземпляр WeatherAnalyzer с данными о погоде.
+    
+    Args:
+        weather_data: Данные о погоде от WeatherAPIClient
+        
+    Returns:
+        Экземпляр WeatherAnalyzer
+    """
+    return WeatherAnalyzer(weather_data)
+
+
+if __name__ == "__main__":
+    # Пример использования
+    print("Это модуль WeatherAnalyzer. Запустите main.py для запуска приложения.")
