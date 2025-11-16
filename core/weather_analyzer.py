@@ -229,22 +229,34 @@ class WeatherAnalyzer:
      # New integration
      # ----------------------------------------------------------------------
 
-    def get_current_weather(self) -> Dict[str, Any]:
-        """Получает текущую погоду (первый период прогноза)"""
-        if not self.raw or 'list' not in self.raw or len(self.raw['list']) == 0:
-            return {}
-        
-        current = self.raw['list'][0]
-        return {
-            'temperature': current['main']['temp'] - 273.15,  # K to C
-            'feels_like': current['main']['feels_like'] - 273.15,
-            'humidity': current['main']['humidity'],
-            'pressure': current['main']['pressure'],
-            'wind_speed': current['wind']['speed'],
-            'weather': current['weather'][0]['description'],
-            'weather_main': current['weather'][0]['main'],
-            'icon': current['weather'][0]['icon']
-        }
+def get_current_weather(self) -> Dict[str, Any]:
+    """Получает текущую погоду (первый период прогноза) с правильными единицами измерения"""
+    if not self.raw or 'list' not in self.raw or len(self.raw['list']) == 0:
+        return {}
+    
+    current = self.raw['list'][0]
+    
+    # Получаем данные с правильными единицами измерения
+    main_data = current.get('main', {})
+    
+    # Температура уже в °C (благодаря units=metric в запросе)
+    temperature = main_data.get('temp', 0)
+    feels_like = main_data.get('feels_like', 0)
+    
+    # Преобразуем давление из гПа в мм рт. ст.
+    pressure_hpa = main_data.get('pressure', 0)
+    pressure_mmhg = round(pressure_hpa * 0.750062, 1)  # 1 гПа = 0.750062 мм рт. ст.
+    
+    return {
+        'temperature': round(temperature, 1),
+        'feels_like': round(feels_like, 1),
+        'humidity': main_data.get('humidity', 0),
+        'pressure': pressure_mmhg,  # теперь в мм рт. ст.
+        'wind_speed': current.get('wind', {}).get('speed', 0),
+        'weather': current['weather'][0]['description'] if current.get('weather') else 'Неизвестно',
+        'weather_main': current['weather'][0]['main'] if current.get('weather') else 'Clear',
+        'icon': current['weather'][0]['icon'] if current.get('weather') else '01d'
+    }
 
     def get_today_forecast(self) -> Dict[str, Any]:
         """Получает прогноз на сегодня"""

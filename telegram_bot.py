@@ -1,6 +1,6 @@
 import logging
 import telebot
-from telebot.types import Message
+from telebot.types import Message, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from typing import Dict, Any, List
 
 from services.storage.subscriber_db import SubscriberDBConnection
@@ -18,6 +18,50 @@ bot = telebot.TeleBot(settings.TELEGRAM_BOT_TOKEN)
 pending_city_input = {}
 
 # -----------------------------------------------------------------------------
+# Вспомогательные функции для клавиатур
+# -----------------------------------------------------------------------------
+def create_main_keyboard():
+    """Создает основную клавиатуру быстрого доступа"""
+    keyboard = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+    keyboard.add(
+        KeyboardButton("🌤 Сейчас"),
+        KeyboardButton("📅 Сегодня"),
+        KeyboardButton("🚗 Мойка"),
+        KeyboardButton("⚠️ Опасности"),
+        KeyboardButton("🏙 Город"),
+        KeyboardButton("📊 Статус")
+    )
+    return keyboard
+
+def create_weather_actions_keyboard():
+    """Создает инлайн-клавиатуру для действий с погодой"""
+    keyboard = InlineKeyboardMarkup(row_width=2)
+    keyboard.add(
+        InlineKeyboardButton("🚗 Мойка", callback_data="quick_wash"),
+        InlineKeyboardButton("📅 Завтра", callback_data="quick_tomorrow"),
+        InlineKeyboardButton("⚠️ Опасности", callback_data="quick_alerts"),
+        InlineKeyboardButton("🏙 Сменить город", callback_data="quick_city")
+    )
+    return keyboard
+
+def create_city_keyboard():
+    """Клавиатура для выбора города (исправленная)"""
+    keyboard = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+    keyboard.add(
+        KeyboardButton("📍 Москва"),
+        KeyboardButton("📍 Санкт-Петербург"),
+        KeyboardButton("📍 Тюмень"), 
+        KeyboardButton("📍 Екатеринбург"),
+        KeyboardButton("📍 Новосибирск"),
+        KeyboardButton("📍 Казань")
+    )
+    keyboard.add(
+        KeyboardButton("📍 Ввести другой город"),
+        KeyboardButton("🔙 Назад к меню")
+    )
+    return keyboard
+
+# -----------------------------------------------------------------------------
 # /start - Начало работы
 # -----------------------------------------------------------------------------
 @bot.message_handler(commands=['start'])
@@ -30,30 +74,51 @@ def cmd_start(message: Message):
         user = db.get_user_by_chat_id(chat_id)
         if user is None or user["city"] is None:
             bot.send_message(chat_id, 
-                "👋 *Добро пожаловать в ClearyFi!*\n\n"
-                "Я помогу вам с рекомендациями по мойке автомобиля на основе прогноза погоды.\n\n"
-                "📝 *Для начала работы введите ваш город:*",
-                parse_mode='Markdown'
+                "🚗 *Добро пожаловать в ClearyFi!*\n\n"
+                "Я ваш умный помощник для ухода за автомобилем!\n\n"
+                "Я помогу вам:\n"
+                "• Найти лучший день для мойки автомобиля\n"  
+                "• Получать точные прогнозы погоды\n"
+                "• Узнать о погодных предупреждениях\n"
+                "• Получать ежедневные рекомендации\n\n"
+                "🏙️ *Для начала выберите ваш город:*",
+                parse_mode='Markdown',
+                reply_markup=create_city_keyboard()
             )
             db.add_or_update_user(user_id, chat_id, username)
             pending_city_input[chat_id] = True
             return
 
-        bot.send_message(
-            chat_id,
-            "👋 *С возвращением в ClearyFi!*\n\n"
-            f"🏙️ Ваш город: {user['city']}\n\n"
-            "*🚀 Доступные команды:*\n"
-            "/now - Погода прямо сейчас\n"
-            "/today - Прогноз на сегодня\n" 
-            "/tomorrow - Что ожидает завтра\n"
-            "/wash - Рекомендация по мойке\n"
-            "/alerts - Погодные предупреждения\n"
-            "/status - Ваши настройки\n"
-            "/city - Сменить город\n\n"
-            "_📧 Вы также получаете ежедневные уведомления с прогнозами_",
-            parse_mode='Markdown'
-        )
+# -----------------------------------------------------------------------------
+# /help - Справка по командам
+# -----------------------------------------------------------------------------
+@bot.message_handler(commands=['help'])
+def cmd_help(message: Message):
+    help_text = """
+🤖 *ClearyFi - ваш авто-погодный помощник*
+
+*🚀 Быстрый доступ через кнопки:*
+🌤 Сейчас - Текущая погода
+📅 Сегодня - Прогноз на сегодня
+🚗 Мойка - Рекомендация по мойке
+⚠️ Опасности - Погодные предупреждения
+🏙 Город - Сменить город
+📊 Статус - Ваши настройки
+
+*📋 Текстовые команды:*
+/start - Начать работу
+/help - Эта справка
+/now - Погода сейчас
+/today - Сегодня
+/tomorrow - Завтра
+/wash - Мойка
+/alerts - Опасности
+/city - Сменить город
+/status - Статус
+
+*💡 Совет:* Используйте кнопки - это удобнее!
+    """
+    bot.send_message(message.chat.id, help_text, parse_mode='Markdown')
 
 # -----------------------------------------------------------------------------
 # /status - Статус пользователя
@@ -68,7 +133,7 @@ def cmd_status(message: Message):
         if not user or not user.get("city"):
             bot.send_message(chat_id, 
                 "❌ *Вы еще не настроили бота*\n\n"
-                "Используйте /start чтобы начать работу.",
+                "Нажмите /start чтобы начать работу.",
                 parse_mode='Markdown'
             )
             return
@@ -76,10 +141,15 @@ def cmd_status(message: Message):
         status_text = (
             "📊 *Ваш статус в ClearyFi:*\n\n"
             f"🏙️ *Город:* {user['city']}\n"
-            f"🔔 *Уведомления:* {'✅ ВКЛ' if user.get('is_active', 1) else '❌ ВЫКЛ'}\n"
+            f"🔔 *Уведомления:* {'✅ ВКЛ' if user.get('is_active', True) else '❌ ВЫКЛ'}\n"
             f"⏰ *Время уведомлений:* {user.get('notification_time', '09:00')}\n\n"
-            "_Используйте /city чтобы изменить город_"
         )
+        
+        # Добавляем подсказки в зависимости от статуса
+        if user.get('is_active', True):
+            status_text += "_Чтобы отключить уведомления, используйте /unsubscribe_"
+        else:
+            status_text += "_Чтобы включить уведомления, используйте /subscribe_"
         
         bot.send_message(chat_id, status_text, parse_mode='Markdown')
 
@@ -93,7 +163,11 @@ def cmd_now(message: Message):
     with SubscriberDBConnection() as db:
         user = db.get_user_by_chat_id(chat_id)
         if not user or not user.get("city"):
-            bot.send_message(chat_id, "❌ Сначала укажите город через /start")
+            bot.send_message(chat_id, 
+                "❌ *Сначала укажите город*\n\n"
+                "Нажмите /start для настройки",
+                parse_mode='Markdown'
+            )
             return
             
     try:
@@ -104,8 +178,7 @@ def cmd_now(message: Message):
             analyzer = WeatherAnalyzer(forecast)
             current = analyzer.get_current_weather()
             
-            if current:
-                # Получаем emoji для погоды
+            if current:  # ← ЭТА СТРОКА ДОЛЖНА БЫТЬ С ОТСТУПОМ 12 ПРОБЕЛОВ
                 weather_emoji = get_weather_emoji(current['weather_main'])
                 
                 message_text = (
@@ -113,13 +186,18 @@ def cmd_now(message: Message):
                     f"🌡 *Температура:* {current['temperature']:.1f}°C\n"
                     f"🎯 *Ощущается как:* {current['feels_like']:.1f}°C\n"
                     f"💧 *Влажность:* {current['humidity']}%\n"
-                    f"📊 *Давление:* {current['pressure']} гПа\n"
+                    f"📊 *Давление:* {current['pressure']:.0f} мм рт. ст.\n"
                     f"💨 *Ветер:* {current['wind_speed']} м/с\n"
-                    f"☁️ *Состояние:* {current['weather']}\n\n"
+                    f"☁️ *Состояние:* {current['weather'].capitalize()}\n\n"
                     f"_Обновлено: сейчас_"
                 )
                 
-                bot.send_message(chat_id, message_text, parse_mode='Markdown')
+                bot.send_message(
+                    chat_id, 
+                    message_text, 
+                    parse_mode='Markdown',
+                    reply_markup=create_weather_actions_keyboard()
+                )
             else:
                 bot.send_message(chat_id, "❌ Не удалось получить текущую погоду")
         else:
@@ -158,7 +236,12 @@ def cmd_today(message: Message):
                     f"{recommendation}"
                 )
                 
-                bot.send_message(chat_id, message_text, parse_mode='Markdown')
+                bot.send_message(
+                    chat_id, 
+                    message_text, 
+                    parse_mode='Markdown',
+                    reply_markup=create_weather_actions_keyboard()
+                )
             else:
                 bot.send_message(chat_id, "❌ Не удалось получить прогноз на сегодня")
         else:
@@ -197,7 +280,12 @@ def cmd_tomorrow(message: Message):
                     f"{recommendation}"
                 )
                 
-                bot.send_message(chat_id, message_text, parse_mode='Markdown')
+                bot.send_message(
+                    chat_id, 
+                    message_text, 
+                    parse_mode='Markdown',
+                    reply_markup=create_weather_actions_keyboard()
+                )
             else:
                 bot.send_message(chat_id, "❌ Не удалось получить прогноз на завтра")
         else:
@@ -233,7 +321,12 @@ def cmd_wash(message: Message):
                 f"{recommendation}"
             )
             
-            bot.send_message(chat_id, message_text, parse_mode='Markdown')
+            bot.send_message(
+                chat_id, 
+                message_text, 
+                parse_mode='Markdown',
+                reply_markup=create_weather_actions_keyboard()
+            )
         else:
             bot.send_message(chat_id, "❌ Не удалось получить прогноз")
             
@@ -267,7 +360,12 @@ def cmd_alerts(message: Message):
             else:
                 message_text = f"✅ *В {user['city']} особых предупреждений нет*\n\n_Погодные условия стабильные_"
                 
-            bot.send_message(chat_id, message_text, parse_mode='Markdown')
+            bot.send_message(
+                chat_id, 
+                message_text, 
+                parse_mode='Markdown',
+                reply_markup=create_weather_actions_keyboard()
+            )
         else:
             bot.send_message(chat_id, "❌ Не удалось получить прогноз")
             
@@ -283,16 +381,134 @@ def cmd_city(message: Message):
     chat_id = message.chat.id
     pending_city_input[chat_id] = True
     bot.send_message(chat_id, 
-        "🏙️ *Введите новый город:*\n\n"
-        "_Например: Москва, Санкт-Петербург, Екатеринбург_",
-        parse_mode='Markdown'
+        "🏙️ *Выберите город из списка или введите свой:*\n\n"
+        "_Вы можете выбрать из популярных или ввести любой другой город_",
+        parse_mode='Markdown',
+        reply_markup=create_city_keyboard()
     )
 
 # -----------------------------------------------------------------------------
-# Ввод города
+# /unsubscribe - Отписаться от уведомлений
 # -----------------------------------------------------------------------------
-@bot.message_handler(func=lambda msg: msg.chat.id in pending_city_input)
-def set_city(message: Message):
+@bot.message_handler(commands=['unsubscribe'])
+def cmd_unsubscribe(message: Message):
+    chat_id = message.chat.id
+    user_id = message.from_user.id
+    
+    with SubscriberDBConnection() as db:
+        db.update_user_active(user_id, False)
+        bot.send_message(chat_id, 
+            "✅ *Вы отписались от ежедневных уведомлений.*\n\n"
+            "Вы больше не будете получать автоматические прогнозы.\n"
+            "Чтобы снова подписаться, используйте /subscribe",
+            parse_mode='Markdown',
+            reply_markup=create_main_keyboard()
+        )
+
+# -----------------------------------------------------------------------------
+# /subscribe - Подписаться на уведомления  
+# -----------------------------------------------------------------------------
+@bot.message_handler(commands=['subscribe'])
+def cmd_subscribe(message: Message):
+    chat_id = message.chat.id
+    user_id = message.from_user.id
+    
+    with SubscriberDBConnection() as db:
+        user = db.get_user_by_chat_id(chat_id)
+        if not user or not user.get("city"):
+            bot.send_message(chat_id, 
+                "❌ *Сначала укажите город*\n\n"
+                "Используйте /city чтобы установить город",
+                parse_mode='Markdown'
+            )
+            return
+        
+        db.update_user_active(user_id, True)
+        bot.send_message(chat_id, 
+            "✅ *Вы подписались на ежедневные уведомления!*\n\n"
+            "Теперь вы будете получать прогнозы и рекомендации каждый день в 09:00.",
+            parse_mode='Markdown',
+            reply_markup=create_main_keyboard()
+        )
+
+# -----------------------------------------------------------------------------
+# Обработка текстовых команд из кнопок
+# -----------------------------------------------------------------------------
+@bot.message_handler(func=lambda message: True)
+def handle_text_commands(message: Message):
+    chat_id = message.chat.id
+    text = message.text.strip()
+    
+    # Если ожидается ввод города
+    if chat_id in pending_city_input:
+        handle_city_input(message)
+        return
+    
+    # Обработка быстрых команд из кнопок
+    command_handlers = {
+        "🌤 сейчас": cmd_now,
+        "📅 сегодня": cmd_today,
+        "🚗 мойка": cmd_wash,
+        "⚠️ опасности": cmd_alerts,
+        "🏙 город": cmd_city,
+        "📊 статус": cmd_status,
+        "🔙 назад": lambda msg: bot.send_message(msg.chat.id, "Главное меню:", reply_markup=create_main_keyboard())
+    }
+    
+    # Обработка популярных городов (исправлено)
+    if text.startswith("📍 "):
+        city_name = text[2:].strip()  # Убираем эмодзи и пробел, обрезаем лишние пробелы
+        if city_name == "Другой город":
+            bot.send_message(chat_id, "🏙️ Введите название вашего города:")
+            pending_city_input[chat_id] = True
+            return
+        elif city_name != "Назад":
+            # Убираем "📍 " из названия города для проверки
+            clean_city_name = city_name.replace("📍 ", "").strip()
+            handle_city_selection(message, clean_city_name)
+            return
+    
+    # Вызов обработчика команды
+    for command_text, handler in command_handlers.items():
+        if text.lower() == command_text.lower():
+            handler(message)
+            return
+    
+    # Если команда не распознана
+    bot.send_message(chat_id, 
+        "❌ Команда не распознана\n\n"
+        "Используйте кнопки ниже или /help для списка команд",
+        reply_markup=create_main_keyboard()
+    )
+
+# -----------------------------------------------------------------------------
+# Обработка callback-запросов от инлайн-кнопок
+# -----------------------------------------------------------------------------
+@bot.callback_query_handler(func=lambda call: True)
+def handle_callback(call):
+    chat_id = call.message.chat.id
+    message_id = call.message.message_id
+    
+    # Создаем fake message object для вызова команд
+    fake_message = type('', (), {'chat': type('', (), {'id': chat_id})(), 'from_user': call.from_user})()
+    
+    callback_handlers = {
+        "quick_wash": cmd_wash,
+        "quick_tomorrow": cmd_tomorrow,
+        "quick_alerts": cmd_alerts,
+        "quick_city": cmd_city
+    }
+    
+    if call.data in callback_handlers:
+        callback_handlers[call.data](fake_message)
+    
+    # Подтверждаем обработку callback
+    bot.answer_callback_query(call.id)
+
+# -----------------------------------------------------------------------------
+# Обработка ввода города
+# -----------------------------------------------------------------------------
+def handle_city_input(message: Message):
     chat_id = message.chat.id
     text = message.text.strip()
     user_id = message.from_user.id
@@ -301,33 +517,46 @@ def set_city(message: Message):
         bot.send_message(chat_id, "❌ Пожалуйста, введите корректное название города:")
         return
 
+    handle_city_selection(message, text)
+
+def handle_city_selection(message: Message, city_name: str):
+    chat_id = message.chat.id
+    user_id = message.from_user.id
+    
+    # Очищаем название города от лишних символов
+    clean_city_name = city_name.replace("📍", "").strip()
+    
+    if not clean_city_name:
+        bot.send_message(chat_id, "❌ Пожалуйста, введите корректное название города:")
+        return
+
     # Проверяем город через API
     weather_client = WeatherAPIClient(api_key=settings.OPENWEATHER_API_KEY)
-    if not weather_client.is_city_valid(text):
+    if not weather_client.is_city_valid(clean_city_name):
         bot.send_message(chat_id, 
-            f"❌ *Город '{text}' не найден*\n\n"
-            "Пожалуйста, проверьте написание и введите город еще раз:",
-            parse_mode='Markdown'
+            f"❌ *Город '{clean_city_name}' не найден*\n\n"
+            "Пожалуйста, проверьте написание и введите город еще раз:\n"
+            "_Убедитесь, что город находится в России_",
+            parse_mode='Markdown',
+            reply_markup=create_city_keyboard()
         )
         return
 
     # Сохраняем город в базу
     with SubscriberDBConnection() as db:
-        db.update_user_city(user_id, text)
+        db.update_user_city(user_id, clean_city_name)
 
-    del pending_city_input[chat_id]
+    if chat_id in pending_city_input:
+        del pending_city_input[chat_id]
     
     bot.send_message(
         chat_id,
-        f"✅ *Отлично! Город '{text}' сохранен!*\n\n"
+        f"✅ *Отлично! Город '{clean_city_name}' сохранен!*\n\n"
         "📧 Вы будете получать ежедневные уведомления с прогнозом погоды "
         "и рекомендациями по мойке автомобиля.\n\n"
-        "*🚀 Теперь можете использовать команды:*\n"
-        "/now - Погода сейчас\n"
-        "/today - Прогноз на сегодня\n"
-        "/wash - Рекомендация по мойке\n"
-        "/alerts - Погодные предупреждения",
-        parse_mode='Markdown'
+        "*🚀 Используйте кнопки ниже для быстрого доступа:*",
+        parse_mode='Markdown',
+        reply_markup=create_main_keyboard()
     )
 
 # -----------------------------------------------------------------------------
@@ -349,8 +578,8 @@ def get_weather_emoji(weather_main: str) -> str:
 
 def get_daily_recommendation(day_data: Dict[str, Any], day_name: str) -> str:
     """Генерирует рекомендацию для конкретного дня"""
-    temp = day_data.get('temp', {}).get('day', 0)
-    weather = day_data.get('weather', [{}])[0].get('description', 'Неизвестно')
+    temp = day_data.get('temp', {}).get('day', 0) if isinstance(day_data.get('temp'), dict) else day_data.get('temp', 0)
+    weather = day_data.get('weather', [{}])[0].get('description', 'Неизвестно') if day_data.get('weather') else 'Неизвестно'
     humidity = day_data.get('humidity', 0)
     wind_speed = day_data.get('wind_speed', 0)
     
@@ -377,6 +606,6 @@ def get_daily_recommendation(day_data: Dict[str, Any], day_name: str) -> str:
 # Запуск бота
 # -----------------------------------------------------------------------------
 if __name__ == "__main__":
-    print("🚀 ClearyFi Telegram Bot запущен с новыми командами!")
-    print("📋 Доступные команды: /start, /status, /now, /today, /tomorrow, /wash, /alerts, /city")
+    print("🚀 ClearyFi Telegram Bot запущен с улучшенным UX!")
+    print("📋 Доступны текстовые команды и интерактивные кнопки")
     bot.infinity_polling(timeout=60, skip_pending=True)
