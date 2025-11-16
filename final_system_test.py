@@ -9,7 +9,7 @@ print("=== ФИНАЛЬНЫЙ ТЕСТ СИСТЕМЫ ===")
 try:
     from services.weather.weather_api_client import WeatherAPIClient
     from core.weather_analyzer import WeatherAnalyzer
-    from config.settings import OPENWEATHER_API_KEY, TELEGRAM_BOT_TOKEN
+    from config.settings import settings
     import telebot
     print("✅ Все импорты успешны")
 except ImportError as e:
@@ -18,7 +18,7 @@ except ImportError as e:
 
 # Тест 2: Получение прогноза
 try:
-    weather_client = WeatherAPIClient(api_key=OPENWEATHER_API_KEY)
+    weather_client = WeatherAPIClient(api_key=settings.OPENWEATHER_API_KEY)
     forecast = weather_client.get_forecast("Тюмень")
     if forecast:
         print("✅ Прогноз получен успешно")
@@ -41,7 +41,7 @@ except Exception as e:
 
 # Тест 4: Отправка сообщения
 try:
-    bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN)
+    bot = telebot.TeleBot(settings.TELEGRAM_BOT_TOKEN)
     test_message = "✅ Система ClearyFi работает корректно! Демон и бот синхронизированы."
     bot.send_message(279492815, test_message)
     print("✅ Тестовое сообщение отправлено")

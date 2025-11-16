@@ -5,13 +5,13 @@ sys.path.insert(0, '/data/data/com.termux/files/home/projects/clearyfi')
 
 from services.weather.weather_api_client import WeatherAPIClient
 from core.weather_analyzer import WeatherAnalyzer
-from config.settings import OPENWEATHER_API_KEY
+from config.settings import settings
 
 print("=== ПРОВЕРКА WEATHER_ANALYZER ===")
 
 try:
     # Получаем прогноз
-    weather_client = WeatherAPIClient(api_key=OPENWEATHER_API_KEY)
+    weather_client = WeatherAPIClient(api_key=settings.OPENWEATHER_API_KEY)
     forecast = weather_client.get_forecast("Тюмень")
     
     if forecast:

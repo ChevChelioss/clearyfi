@@ -4,6 +4,7 @@ import os
 import time
 import logging
 import traceback
+from typing import Dict
 
 # Добавляем корень проекта в sys.path
 PROJECT_ROOT = "/data/data/com.termux/files/home/projects/clearyfi"
@@ -20,7 +21,7 @@ try:
     from core.weather_analyzer import WeatherAnalyzer
     from core.recommendation_engine import RecommendationEngine
     import telebot
-    from config.settings import TELEGRAM_BOT_TOKEN
+    from config.settings import settings
     from services.daemon.daemon_manager import DaemonManager
     
     print("✅ Все модули успешно импортированы!")
@@ -41,42 +42,58 @@ logging.basicConfig(
     ]
 )
 
-bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN)
+bot = telebot.TeleBot(settings.TELEGRAM_BOT_TOKEN)
 
 def send_recommendation(chat_id: int, city: str):
-    """Отправка рекомендации пользователю с обработкой ошибок"""
+    """Отправка рекомендации пользователю на основе прогноза погоды"""
     try:
         logging.info(f"📨 Отправляем уведомление для {city} (chat_id: {chat_id})")
-        
-        # Получаем прогноз
-        from config.settings import OPENWEATHER_API_KEY
-        weather_client = WeatherAPIClient(api_key=OPENWEATHER_API_KEY)
-        forecast = weather_client.get_forecast(city)
-        
+
+        # Получаем прогноз на 3 дня
+        from config.settings import settings
+        weather_client = WeatherAPIClient(api_key=settings.OPENWEATHER_API_KEY)
+        forecast = weather_client.get_forecast(city, days=3)  # Прогноз на 3 дня
+
         if not forecast:
             logging.warning(f"Не удалось получить прогноз для {city}")
             return False
-            
-        # Анализируем и получаем рекомендацию - используем новый метод
-        analyzer = WeatherAnalyzer(forecast)
-        recommendation = analyzer.get_detailed_recommendation()
-        
+
+        # Анализируем прогноз
+        analyzer = WeatherAnalyzer()
+        recommendation = analyzer.analyze_forecast(forecast)
+
         # Формируем сообщение
         message = (
-            f"🌤 *Ежедневный прогноз для {city}:*\n\n"
-            f"{recommendation}"
+            f"🌤 *Прогноз для {city} на 3 дня:*\n\n"
+            f"{recommendation}\n\n"
+            f"📅 *Детали по дням:*\n"
         )
-        
+
+        # Добавляем информацию по каждому дню
+        for day in forecast.get('days', [])[:3]:
+            date = day.get('date', 'Unknown')
+            temp_min = day.get('temp_min', 0)
+            temp_max = day.get('temp_max', 0)
+            precip_prob = day.get('precipitation_prob', 0) * 100
+            conditions = day.get('descriptions', ['ясно'])[0]
+            
+            message += (
+                f"• {date}: {temp_min:.0f}°-{temp_max:.0f}°C, "
+                f"{conditions}, осадки {precip_prob:.0f}%\n"
+            )
+
+        message += "\n🚗 _ClearyFi - ваш умный автоассистент_"
+
         # Отправляем через бота
         bot.send_message(
-            chat_id, 
+            chat_id,
             message,
             parse_mode='Markdown'
         )
-        
+
         logging.info(f"✅ Уведомление отправлено для {city}")
         return True
-        
+
     except Exception as e:
         logging.error(f"❌ Ошибка отправки для {city}: {e}")
         logging.debug(traceback.format_exc())

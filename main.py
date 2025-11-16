@@ -1,4 +1,4 @@
-from config.settings import OPENWEATHER_API_KEY
+from config.settings import settings
 from services.weather.weather_api_client import WeatherAPIClient
 from core.weather_analyzer import WeatherAnalyzer
 
@@ -6,7 +6,7 @@ from core.weather_analyzer import WeatherAnalyzer
 def main():
     city = "Москва"
 
-    api = WeatherAPIClient(api_key=OPENWEATHER_API_KEY)
+    api = WeatherAPIClient(api_key=settings.OPENWEATHER_API_KEY)
     forecast = api.get_forecast(city)
 
     if not forecast:

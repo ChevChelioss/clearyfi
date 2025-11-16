@@ -24,7 +24,7 @@ try:
     import telebot
     print("✅ telebot - OK")
     
-    from config.settings import TELEGRAM_BOT_TOKEN
+    from config.settings import settings
     print("✅ TELEGRAM_BOT_TOKEN - OK")
     
     from services.daemon.daemon_manager import DaemonManager

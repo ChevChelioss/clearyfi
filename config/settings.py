@@ -8,7 +8,7 @@ class Settings:
     TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '')
     
     # Weather APIs
-    OPENWEATHER_API_KEY = os.getenv('OPENWEATHER_API_KEY',"DEFAULT_COUNTRY" '')
+    OPENWEATHER_API_KEY = os.getenv('OPENWEATHER_API_KEY', '')
     
     # App settings
     DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'

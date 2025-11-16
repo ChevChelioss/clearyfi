@@ -6,7 +6,7 @@ from typing import Dict, Any, List
 from services.storage.subscriber_db import SubscriberDBConnection
 from services.weather.weather_api_client import WeatherAPIClient
 from core.weather_analyzer import WeatherAnalyzer
-from config.settings import TELEGRAM_BOT_TOKEN, OPENWEATHER_API_KEY
+from config.settings import settings
 
 # Настройка логирования
 logging.basicConfig(
@@ -14,7 +14,7 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 
-bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN)
+bot = telebot.TeleBot(settings.TELEGRAM_BOT_TOKEN)
 pending_city_input = {}
 
 # -----------------------------------------------------------------------------
@@ -97,7 +97,7 @@ def cmd_now(message: Message):
             return
             
     try:
-        weather_client = WeatherAPIClient(api_key=OPENWEATHER_API_KEY)
+        weather_client = WeatherAPIClient(api_key=settings.OPENWEATHER_API_KEY)
         forecast = weather_client.get_forecast(user["city"])
         
         if forecast:
@@ -143,7 +143,7 @@ def cmd_today(message: Message):
             return
             
     try:
-        weather_client = WeatherAPIClient(api_key=OPENWEATHER_API_KEY)
+        weather_client = WeatherAPIClient(api_key=settings.OPENWEATHER_API_KEY)
         forecast = weather_client.get_forecast(user["city"])
         
         if forecast:
@@ -182,7 +182,7 @@ def cmd_tomorrow(message: Message):
             return
             
     try:
-        weather_client = WeatherAPIClient(api_key=OPENWEATHER_API_KEY)
+        weather_client = WeatherAPIClient(api_key=settings.OPENWEATHER_API_KEY)
         forecast = weather_client.get_forecast(user["city"])
         
         if forecast:
@@ -221,7 +221,7 @@ def cmd_wash(message: Message):
             return
             
     try:
-        weather_client = WeatherAPIClient(api_key=OPENWEATHER_API_KEY)
+        weather_client = WeatherAPIClient(api_key=settings.OPENWEATHER_API_KEY)
         forecast = weather_client.get_forecast(user["city"])
         
         if forecast:
@@ -255,7 +255,7 @@ def cmd_alerts(message: Message):
             return
             
     try:
-        weather_client = WeatherAPIClient(api_key=OPENWEATHER_API_KEY)
+        weather_client = WeatherAPIClient(api_key=settings.OPENWEATHER_API_KEY)
         forecast = weather_client.get_forecast(user["city"])
         
         if forecast:
@@ -302,7 +302,7 @@ def set_city(message: Message):
         return
 
     # Проверяем город через API
-    weather_client = WeatherAPIClient(api_key=OPENWEATHER_API_KEY)
+    weather_client = WeatherAPIClient(api_key=settings.OPENWEATHER_API_KEY)
     if not weather_client.is_city_valid(text):
         bot.send_message(chat_id, 
             f"❌ *Город '{text}' не найден*\n\n"
