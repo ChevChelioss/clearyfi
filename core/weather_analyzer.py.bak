@@ -1,0 +1,177 @@
+# core/weather_analyzer.py
+
+from typing import List, Dict, Any, Optional
+import statistics
+from events import (
+    RainEvent, SnowEvent, MeltEvent, MudEvent,
+    TemperatureDropEvent, DryWindowEvent
+)
+
+class WeatherAnalyzer:
+    """
+    Центральный модуль анализа погоды.
+    Принимает прогноз погоды на 5+ дней и возвращает:
+    - лучший день для мойки
+    - оценку рисков
+    - описание погодных условий
+    """
+
+    def __init__(self, forecast_data: Dict[str, Any]):
+        """
+        :param forecast_data: Сырые данные прогноза от API
+        """
+        self.raw = forecast_data
+        self.daily = self._normalize_daily_data()
+
+    # ----------------------------------------------------------------------
+    # 1. НОРМАЛИЗАЦИЯ ДАННЫХ
+    # ----------------------------------------------------------------------
+
+    def _normalize_daily_data(self) -> List[Dict[str, Any]]:
+        """
+        Приводит данные API к нормальной структуре:
+        [
+            {
+                'date': '2025-11-15',
+                'temp': 5.2,
+                'humidity': 68,
+                'wind': 3.4,
+                'rain_prob': 0.12,
+                'conditions': ['Clouds', 'Light rain']
+            },
+            ...
+        ]
+        """
+
+        # OpenWeather — прогноз хранится в raw['list']
+        if "list" not in self.raw:
+            return []
+
+        normalized = {}
+
+        for block in self.raw["list"]:
+            dt_txt = block.get("dt_txt")
+            if not dt_txt:
+                continue
+
+            day = dt_txt.split(" ")[0]
+
+            if day not in normalized:
+                normalized[day] = {
+                    "temps": [],
+                    "humidity": [],
+                    "wind": [],
+                    "conditions": [],
+                    "rain_vol": []
+                }
+
+            # Температура
+            normalized[day]["temps"].append(block["main"]["temp"])
+
+            # Влажность
+            normalized[day]["humidity"].append(block["main"]["humidity"])
+
+            # Ветер
+            normalized[day]["wind"].append(block["wind"]["speed"])
+
+            # Описание погоды
+            for w in block.get("weather", []):
+                normalized[day]["conditions"].append(w["main"])
+
+            # Осадки
+            rain = block.get("rain", {}).get("3h", 0)
+            snow = block.get("snow", {}).get("3h", 0)
+            normalized[day]["rain_vol"].append(rain + snow)
+
+        # Сжимаем в компактный список
+        result = []
+        for day, values in normalized.items():
+            result.append({
+                "date": day,
+                "temp": round(statistics.mean(values["temps"]), 1),
+                "humidity": round(statistics.mean(values["humidity"]), 1),
+                "wind": round(statistics.mean(values["wind"]), 1),
+                "rain_prob": 1 if sum(values["rain_vol"]) > 0 else 0,
+                "conditions": list(set(values["conditions"]))
+            })
+
+        return result
+
+    # ----------------------------------------------------------------------
+    # 2. ОСНОВНАЯ ЛОГИКА АНАЛИЗА
+    # ----------------------------------------------------------------------
+
+    def get_best_wash_day(self) -> Optional[Dict[str, Any]]:
+        """
+        Возвращает ЛУЧШИЙ день для мойки на основе критериев:
+        - отсутствие дождя
+        - влажность < 85%
+        - температура > 0
+        - ветер < 10 м/с
+        """
+
+        candidates = []
+
+        for day in self.daily:
+            if (
+                day["rain_prob"] == 0 and
+                day["humidity"] < 85 and
+                day["temp"] > 0 and
+                day["wind"] < 10
+            ):
+                candidates.append(day)
+
+        if not candidates:
+            return None
+
+        # Чем меньше ветер, тем лучше
+        candidates.sort(key=lambda x: (x["wind"], -x["temp"]))
+        return candidates[0]
+
+    # ----------------------------------------------------------------------
+
+    def get_daily_summary(self) -> List[Dict[str, Any]]:
+        """Возвращает краткую сводку по каждому дню."""
+        return self.daily
+
+    # ----------------------------------------------------------------------
+
+
+	# ----------------------------------------------------------------------
+    # Event integration
+    # ----------------------------------------------------------------------
+    def get_day_events(self, day: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        Запускает все event-декторы на одном дне и возвращает список
+        с результатами: [{'name':..., 'message':...}, ...]
+        """
+        detectors = [
+            RainEvent(), SnowEvent(), MeltEvent(),
+            MudEvent(), TemperatureDropEvent(), DryWindowEvent()
+        ]
+        triggered = []
+        for d in detectors:
+            try:
+                if d.is_triggered(day):
+                    triggered.append({"name": d.name, "message": d.get_message(day)})
+            except Exception as e:
+                # надёжность: не ломать весь анализ из-за одного детектора
+                triggered.append({"name": d.name, "error": str(e)})
+        return triggered
+
+
+    def get_recommendation(self) -> str:
+        """Готовая рекомендация пользователю."""
+
+        day = self.get_best_wash_day()
+
+        if not day:
+            return "❌ Ближайшие дни не подходят для мойки — погода нестабильна."
+
+        return (
+            f"✔ Идеальный день для мойки: {day['date']}\n"
+            f"• Температура: {day['temp']}°C\n"
+            f"• Влажность: {day['humidity']}%\n"
+            f"• Ветер: {day['wind']} м/с\n"
+            f"• Условия: {', '.join(day['conditions'])}"
+        )
