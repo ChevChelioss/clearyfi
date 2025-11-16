@@ -53,8 +53,7 @@ def send_recommendation(chat_id: int, city: str):
         from config.settings import settings
         weather_client = WeatherAPIClient(api_key=settings.OPENWEATHER_API_KEY)
         forecast = weather_client.get_forecast(city, days=3)
-       
-        # Прогноз на 3 дня
+
         if not forecast:
             logging.warning(f"Не удалось получить прогноз для {city}")
             return False
@@ -63,30 +62,73 @@ def send_recommendation(chat_id: int, city: str):
         if "list" not in forecast:
             logging.warning(f"Некорректная структура данных для {city}")
             return False
-    
+
         # Анализируем прогноз
         analyzer = WeatherAnalyzer(forecast)
-        recommendation = analyzer.get_recommendation()
-
-        # Формируем сообщение
-        message = (
-            f"🌤 *Прогноз для {city} на 3 дня:*\n\n"
-            f"{recommendation}\n\n"
-            f"📅 *Детали по дням:*\n"
-        )
-
-        # Добавляем информацию по каждому дню
-        for day in forecast.get('days', [])[:3]:
+        
+        # ПОЛУЧАЕМ ДЕТАЛЬНУЮ ИНФОРМАЦИЮ О ДНЯХ
+        daily_summary = analyzer.get_daily_summary()
+        
+        # Формируем улучшенное сообщение
+        message = f"🌤 *Прогноз для {city} на 3 дня:*\n\n"
+        
+        # Анализируем каждый день и даем рекомендации
+        for i, day in enumerate(daily_summary[:3]):
             date = day.get('date', 'Unknown')
-            temp_min = day.get('temp_min', 0)
-            temp_max = day.get('temp_max', 0)
-            precip_prob = day.get('precipitation_prob', 0) * 100
-            conditions = day.get('descriptions', ['ясно'])[0]
+            temp = day.get('temp', 0)
+            humidity = day.get('humidity', 0)
+            wind = day.get('wind', 0)
+            rain_prob = day.get('rain_prob', 0)
+            conditions = ', '.join(day.get('conditions', ['ясно']))
             
+            # Определяем, подходит ли день для мойки
+            wash_suitable = "✅" if (
+                rain_prob == 0 and 
+                humidity < 85 and 
+                temp > 0 and 
+                wind < 10
+            ) else "⚠️" if (
+                rain_prob == 0 and 
+                temp > -5
+            ) else "❌"
+            
+            wash_reason = ""
+            if wash_suitable == "✅":
+                wash_reason = " - хороший день для мойки"
+            elif wash_suitable == "⚠️":
+                wash_reason = " - можно помыть с осторожностью"
+            else:
+                reasons = []
+                if rain_prob > 0:
+                    reasons.append("ожидаются осадки")
+                if temp <= 0:
+                    reasons.append("температура низкая")
+                if humidity >= 85:
+                    reasons.append("высокая влажность")
+                if wind >= 10:
+                    reasons.append("сильный ветер")
+                wash_reason = f" - не рекомендуется: {', '.join(reasons)}"
+            
+            day_label = "Сегодня" if i == 0 else "Завтра" if i == 1 else f"Послезавтра"
             message += (
-                f"• {date}: {temp_min:.0f}°-{temp_max:.0f}°C, "
-                f"{conditions}, осадки {precip_prob:.0f}%\n"
+                f"{wash_suitable} *{day_label} ({date})*:\n"
+                f"   🌡 {temp}°C, 💧 {humidity}%, 💨 {wind} м/с\n"
+                f"   ☁️ {conditions}\n"
+                f"   {wash_reason}\n\n"
             )
+            message += (
+                f"{wash_suitable} *{day_label} ({date})*:\n"
+                f"   🌡 {temp}°C, 💧 {humidity}%, 💨 {wind} м/с\n"
+                f"   ☁️ {conditions}\n"
+                f"   {wash_reason}\n\n"
+            )
+
+        # Добавляем общую рекомендацию
+        best_day = analyzer.get_best_wash_day()
+        if best_day:
+            message += f"🎯 *Лучший день для мойки:* {best_day['date']}\n"
+        else:
+            message += "💡 *Совет:* Если срочно нужно помыть машину, выбирайте день без осадков\n"
 
         message += "\n🚗 _ClearyFi - ваш умный автоассистент_"
 
