@@ -52,15 +52,21 @@ def send_recommendation(chat_id: int, city: str):
         # Получаем прогноз на 3 дня
         from config.settings import settings
         weather_client = WeatherAPIClient(api_key=settings.OPENWEATHER_API_KEY)
-        forecast = weather_client.get_forecast(city, days=3)  # Прогноз на 3 дня
-
+        forecast = weather_client.get_forecast(city, days=3)
+       
+        # Прогноз на 3 дня
         if not forecast:
             logging.warning(f"Не удалось получить прогноз для {city}")
             return False
 
+        # Дополнительная проверка структуры данных
+        if "list" not in forecast:
+            logging.warning(f"Некорректная структура данных для {city}")
+            return False
+    
         # Анализируем прогноз
-        analyzer = WeatherAnalyzer()
-        recommendation = analyzer.analyze_forecast(forecast)
+        analyzer = WeatherAnalyzer(forecast)
+        recommendation = analyzer.get_recommendation()
 
         # Формируем сообщение
         message = (
