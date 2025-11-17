@@ -52,7 +52,7 @@ class WeatherService:
             # Логирование ошибки можно добавить здесь
             return None
     
-    def validate_city(self, city: str) -> bool:
+    async def validate_city(self, city: str) -> bool:
         """
         Проверяет существование города через API.
         
@@ -62,7 +62,7 @@ class WeatherService:
         Returns:
             True если город существует, False в противном случае
         """
-        return self.api_client.is_city_valid(city)
+        return await self.api_client.is_city_valid(city)
     
     def get_immediate_forecast(self, city: str) -> Optional[Dict]:
         """

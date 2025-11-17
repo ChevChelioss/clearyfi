@@ -1,4 +1,8 @@
-# utils/date_utils.py
+#!/usr/bin/env python3
+"""
+Утилиты для работы с датами в ClearyFi
+"""
+
 from datetime import datetime
 from typing import Optional
 
@@ -6,18 +10,10 @@ def format_date_russian(date_str: str) -> str:
     """
     Преобразует дату в формате YYYY-MM-DD в красивый русский формат.
     Пример: '2025-11-21' -> '21 ноября, пятница'
-    
-    Args:
-        date_str: Строка с датой в формате ГГГГ-ММ-ДД
-        
-    Returns:
-        Отформатированная строка даты на русском языке
     """
     try:
-        # Парсим дату из строки
         date_obj = datetime.strptime(date_str, '%Y-%m-%d')
         
-        # Словари для преобразования месяцев и дней недели
         months = {
             1: 'января', 2: 'февраля', 3: 'марта', 4: 'апреля',
             5: 'мая', 6: 'июня', 7: 'июля', 8: 'августа',
@@ -34,7 +30,6 @@ def format_date_russian(date_str: str) -> str:
             'Sunday': 'воскресенье'
         }
         
-        # Получаем компоненты даты
         day = date_obj.day
         month = months.get(date_obj.month, '')
         english_day = date_obj.strftime('%A')
@@ -43,19 +38,44 @@ def format_date_russian(date_str: str) -> str:
         return f"{day} {month}, {day_of_week}"
         
     except (ValueError, TypeError) as e:
-        # В случае ошибки возвращаем оригинальную дату
+        return date_str
+
+def format_date_short(date_str: str) -> str:
+    """
+    Форматирует дату в короткий формат: 'Пн, 17.11'
+    
+    Args:
+        date_str: Строка с датой в формате ГГГГ-ММ-ДД
+        
+    Returns:
+        Строка в формате 'Пн, 17.11'
+    """
+    try:
+        date_obj = datetime.strptime(date_str, '%Y-%m-%d')
+        
+        # Сокращенные названия дней недели
+        short_days = {
+            'Monday': 'Пн',
+            'Tuesday': 'Вт', 
+            'Wednesday': 'Ср',
+            'Thursday': 'Чт',
+            'Friday': 'Пт',
+            'Saturday': 'Сб',
+            'Sunday': 'Вс'
+        }
+        
+        english_day = date_obj.strftime('%A')
+        day_of_week = short_days.get(english_day, '')
+        day_month = date_obj.strftime('%d.%m')
+        
+        return f"{day_of_week}, {day_month}"
+        
+    except (ValueError, TypeError):
         return date_str
 
 def get_relative_day_label(date_str: str, base_date: Optional[str] = None) -> str:
     """
     Возвращает метку дня: 'Сегодня', 'Завтра' или отформатированную дату.
-    
-    Args:
-        date_str: Строка с датой в формате ГГГГ-ММ-ДД
-        base_date: Базовая дата для сравнения (по умолчанию сегодня)
-        
-    Returns:
-        Строка с меткой дня
     """
     try:
         target_date = datetime.strptime(date_str, '%Y-%m-%d')
@@ -72,7 +92,11 @@ def get_relative_day_label(date_str: str, base_date: Optional[str] = None) -> st
         elif delta == 1:
             return "Завтра"
         else:
-            return format_date_russian(date_str)
+            return format_date_short(date_str)
             
     except (ValueError, TypeError):
         return date_str
+
+def get_current_date_str() -> str:
+    """Возвращает текущую дату в формате YYYY-MM-DD"""
+    return datetime.now().strftime('%Y-%m-%d')
