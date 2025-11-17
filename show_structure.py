@@ -148,7 +148,7 @@ class ProjectVisualizer:
 
     def show_project_info(self):
         """Показываем информацию о проекте"""
-        print("🚗 CLEARYFI 2.0 - ПРАВИЛЬНАЯ СТРУКТУРА")
+        print("🚗 CLEARYFI 2.0 - СТРУКТУРА ПРОЕКТА")
         print("=" * 50)
         
         if not self.project_path.exists():
@@ -158,7 +158,7 @@ class ProjectVisualizer:
         # Считаем файлы ПРАВИЛЬНЫМ методом
         py_files, total_lines, folders = self.count_project_files()
         
-        print(f"📊 ПРАВИЛЬНАЯ статистика:")
+        print(f"📊 СТАТИСТИКА:")
         print(f"   📁 Папок: {len(folders)}")
         print(f"   🐍 Файлов .py: {len(py_files)}")
         print(f"   📝 Строк кода: {total_lines}")
