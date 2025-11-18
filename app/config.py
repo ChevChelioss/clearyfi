@@ -10,77 +10,54 @@ from dotenv import load_dotenv
 
 @dataclass
 class DatabaseConfig:
-    """Конфигурация базы данных"""
     path: str = "clearyfi.db"
 
 
 @dataclass
 class BotConfig:
-    """Конфигурация бота"""
     token: str
     admin_ids: list[int]
 
 
 @dataclass
 class WeatherConfig:
-    """Конфигурация погодного сервиса"""
     api_key: str
     provider: str = "openweather"
 
 
+@dataclass
+class AIConfig:
+    """Конфигурация AI сервисов"""
+    deepseek_api_key: str = None
+    enabled: bool = False
+
+
 class Config:
-    """
-    Главный класс конфигурации.
-    Загружает все настройки из переменных окружения.
-    """
+    """Централизованная конфигурация приложения"""
     
     def __init__(self):
-        # Загружаем переменные из .env файла
         load_dotenv()
-        
-        # Настройки бота
         self.bot = BotConfig(
             token=os.getenv("TELEGRAM_BOT_TOKEN"),
-            admin_ids=self._parse_admin_ids(os.getenv("ADMIN_IDS", ""))
+            admin_ids=[int(x) for x in os.getenv("ADMIN_IDS", "").split(",") if x]
         )
-        
-        # Настройки базы данных
         self.database = DatabaseConfig(
             path=os.getenv("DATABASE_PATH", "clearyfi.db")
         )
-        
-        # Настройки погоды
         self.weather = WeatherConfig(
             api_key=os.getenv("WEATHER_API_KEY"),
             provider=os.getenv("WEATHER_PROVIDER", "openweather")
         )
+        self.ai = AIConfig(
+            deepseek_api_key=os.getenv("DEEPSEEK_API_KEY"),
+            enabled=bool(os.getenv("DEEPSEEK_API_KEY"))
+        )
         
-        # Дополнительные настройки
-        self.log_level = os.getenv("LOG_LEVEL", "INFO")
-        
-        # Проверяем обязательные настройки
         self._validate()
     
-    def _parse_admin_ids(self, admin_ids_str: str) -> list[int]:
-        """Преобразует строку с ID администраторов в список чисел"""
-        if not admin_ids_str:
-            return []
-        
-        try:
-            return [int(id_str.strip()) for id_str in admin_ids_str.split(",") if id_str.strip()]
-        except ValueError:
-            return []
-    
     def _validate(self):
-        """Проверяет, что все обязательные настройки установлены"""
-        errors = []
-        
+        """Проверка обязательных настроек"""
         if not self.bot.token:
-            errors.append("TELEGRAM_BOT_TOKEN не установлен в .env файле")
-        
+            raise ValueError("TELEGRAM_BOT_TOKEN is required")
         if not self.weather.api_key:
-            errors.append("WEATHER_API_KEY не установлен в .env файле")
-        
-        if errors:
-            error_message = "\n".join(errors)
-            raise ValueError(f"Ошибки конфигурации:\n{error_message}")
+            raise ValueError("WEATHER_API_KEY is required")
