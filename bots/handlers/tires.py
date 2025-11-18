@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
 """
-Обработчик рекомендаций по шинам
+Обработчик рекомендаций по шинам и шиномонтажу
 """
 
 from telegram import Update
 from telegram.ext import ContextTypes
 
 from .base import BaseHandler
-from utils.date_utils import get_current_timestamp
 
 
 class TiresHandler(BaseHandler):
     """Обработчик для рекомендаций по шинам"""
+    
+    def __init__(self, locale_manager, database, tires_service):
+        super().__init__(locale_manager, database)
+        self.tires_service = tires_service
     
     async def handle(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обрабатывает запрос рекомендации по шинам"""
@@ -30,17 +33,24 @@ class TiresHandler(BaseHandler):
             )
             return
         
-        # Формируем рекомендацию
-        timestamp = get_current_timestamp()
-        tire_recommendation = self.locale.get_message(
-            "tire_recommendation", 
-            city=user_city,
-            timestamp=timestamp
-        )
+        # Показываем, что бот печатает
+        await update.message.reply_chat_action(action='typing')
         
-        await self.send_response(
-            update,
-            tire_recommendation,
-            reply_markup=self.get_main_keyboard(),
-            parse_mode='Markdown'
-        )
+        # Получаем рекомендацию от сервиса
+        result = self.tires_service.get_recommendation(user_city)
+        
+        # Отправляем рекомендацию
+        if result["success"]:
+            await self.send_response(
+                update,
+                result["recommendation"],
+                reply_markup=self.get_main_keyboard(),
+                parse_mode='Markdown'
+            )
+        else:
+            # Если сервис вернул ошибку, отправляем сообщение об ошибке
+            await self.send_response(
+                update,
+                result["recommendation"],
+                reply_markup=self.get_main_keyboard()
+            )

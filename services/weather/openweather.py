@@ -6,8 +6,9 @@
 import requests
 import logging
 from datetime import datetime, timedelta
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List  # ДОБАВИЛИ List
 from urllib.parse import quote
+from collections import Counter  # ДОБАВИЛИ Counter
 
 from core.logger import logger
 from .models import WeatherData, ForecastDay, WeatherForecast
@@ -186,8 +187,7 @@ class OpenWeatherService:
     
     def _get_most_common_condition(self, conditions: List[str]) -> str:
         """Возвращает наиболее частное погодное условие"""
-        from collections import Counter
-        return Counter(conditions).most_common(1)[0][0]
+        return Counter(conditions).most_common(1)[0][0]  # ИСПРАВИЛИ: убрали лишний импорт внутри метода
     
     def _calculate_precipitation_probability(self, conditions: List[str]) -> float:
         """Вычисляет вероятность осадков"""

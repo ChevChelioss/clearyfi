@@ -10,9 +10,14 @@ from locales.manager import LocaleManager
 from core.database import Database
 from bots.telegram_bot import ClearyFiBot
 
-# Импортируем новые сервисы
+# Импортируем сервисы
 from services.weather.openweather import OpenWeatherService
 from services.recommendations.wash import WashRecommendationService
+from services.recommendations.tires import TireRecommendationService
+from services.recommendations.roads import RoadConditionService
+from services.recommendations.maintenance import MaintenanceService          # НОВЫЙ ИМПОРТ
+from services.recommendations.extended_weather import ExtendedWeatherService # НОВЫЙ ИМПОРТ
+from services.subscription.subscription_service import SubscriptionService   # НОВЫЙ ИМПОРТ
 
 
 class ClearyFiApp:
@@ -43,7 +48,7 @@ class ClearyFiApp:
                 token=self.config.bot.token,
                 database=self.database,
                 locale_manager=self.locale,
-                services=self.services  # Передаем сервисы в бот
+                services=self.services
             )
             logger.info("✅ Telegram бот инициализирован")
             
@@ -59,16 +64,49 @@ class ClearyFiApp:
         self.services['weather'] = OpenWeatherService(self.config.weather.api_key)
         logger.info("✅ Погодный сервис инициализирован")
         
-        # Сервисы рекомендаций
+        # Основные сервисы рекомендаций
         self.services['wash'] = WashRecommendationService(
             self.services['weather'],
             self.locale
         )
         logger.info("✅ Сервис рекомендаций по мойке инициализирован")
         
-        # TODO: Добавить сервисы для шин и дорожных условий
-        self.services['tires'] = None  # Будет добавлен позже
-        self.services['roads'] = None  # Будет добавлен позже
+        self.services['tires'] = TireRecommendationService(
+            self.services['weather'],
+            self.locale
+        )
+        logger.info("✅ Сервис рекомендаций по шинам инициализирован")
+        
+        self.services['roads'] = RoadConditionService(
+            self.services['weather'],
+            self.locale
+        )
+        logger.info("✅ Сервис дорожных условий инициализирован")
+        
+        # НОВЫЕ СЕРВИСЫ
+        self.services['maintenance'] = MaintenanceService(
+            self.services['weather'],
+            self.locale,
+            self.database
+        )
+        logger.info("✅ Сервис технического обслуживания инициализирован")
+        
+        self.services['extended_weather'] = ExtendedWeatherService(
+            self.services['weather'],
+            self.locale
+        )
+        logger.info("✅ Сервис расширенных погодных рекомендаций инициализирован")
+        
+        # Сервис подписки (зависит от других сервисов)
+        self.services['subscription'] = SubscriptionService(
+            self.database,
+            self.services['weather'],
+            self.services['wash'],
+            self.services['tires'], 
+            self.services['roads'],
+            self.locale
+        )
+        logger.info("✅ Сервис управления подпиской инициализирован")
     
     def run(self):
         """Запускает приложение"""

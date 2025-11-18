@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Обработчик дорожных условий
+Обработчик расширенных погодных рекомендаций
 """
 
 from telegram import Update
@@ -9,15 +9,15 @@ from telegram.ext import ContextTypes
 from .base import BaseHandler
 
 
-class RoadsHandler(BaseHandler):
-    """Обработчик для дорожных условий"""
+class ExtendedWeatherHandler(BaseHandler):
+    """Обработчик для расширенных погодных рекомендаций"""
     
-    def __init__(self, locale_manager, database, roads_service):
+    def __init__(self, locale_manager, database, extended_weather_service):
         super().__init__(locale_manager, database)
-        self.roads_service = roads_service
+        self.extended_weather_service = extended_weather_service
     
     async def handle(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Обрабатывает запрос дорожных условий"""
+        """Обрабатывает запрос расширенной погодной рекомендации"""
         user_id = update.effective_user.id
         
         # Получаем город пользователя из базы данных
@@ -37,7 +37,7 @@ class RoadsHandler(BaseHandler):
         await update.message.reply_chat_action(action='typing')
         
         # Получаем рекомендацию от сервиса
-        result = self.roads_service.get_recommendation(user_city)
+        result = self.extended_weather_service.get_recommendation(user_city)
         
         # Отправляем рекомендацию
         if result["success"]:

@@ -11,6 +11,8 @@ from .handlers.help import HelpHandler
 from .handlers.wash import WashHandler
 from .handlers.tires import TiresHandler
 from .handlers.roads import RoadsHandler
+from .handlers.maintenance import MaintenanceHandler
+from .handlers.extended_weather import ExtendedWeatherHandler
 from .handlers.subscription import SubscriptionHandler
 from .handlers.settings import SettingsHandler, CITY_SELECTION
 
@@ -42,13 +44,41 @@ class ClearyFiBot:
         wash_handler = WashHandler(
             self.locale, 
             self.database, 
-            self.services['wash']  # Передаем сервис мойки
+            self.services['wash']
         )
         
-        # Пока оставляем остальные обработчики без сервисов
-        tires_handler = TiresHandler(self.locale, self.database)
-        roads_handler = RoadsHandler(self.locale, self.database)
-        subscription_handler = SubscriptionHandler(self.locale, self.database)
+        tires_handler = TiresHandler(
+            self.locale, 
+            self.database, 
+            self.services['tires']
+        )
+        
+        roads_handler = RoadsHandler(
+            self.locale, 
+            self.database, 
+            self.services['roads']
+        )
+        
+        # Новые обработчики с сервисами
+        maintenance_handler = MaintenanceHandler(
+            self.locale,
+            self.database,
+            self.services['maintenance']
+        )
+        
+        extended_weather_handler = ExtendedWeatherHandler(
+            self.locale,
+            self.database,
+            self.services['extended_weather']
+        )
+        
+        # ВАЖНО: Исправляем эту строку - добавляем subscription_service
+        subscription_handler = SubscriptionHandler(
+            self.locale,
+            self.database,
+            self.services['subscription']  # ДОБАВЛЯЕМ ЭТОТ АРГУМЕНТ!
+        )
+        
         settings_handler = SettingsHandler(self.locale, self.database)
         
         # ConversationHandler для настроек города
@@ -88,12 +118,38 @@ class ClearyFiBot:
             roads_handler.handle
         ))
         self.application.add_handler(MessageHandler(
+            filters.Regex(f"^{self.locale.get_button('maintenance')}$"), 
+            maintenance_handler.handle
+        ))
+        self.application.add_handler(MessageHandler(
+            filters.Regex(f"^{self.locale.get_button('extended_weather')}$"), 
+            extended_weather_handler.handle
+        ))
+        self.application.add_handler(MessageHandler(
             filters.Regex(f"^{self.locale.get_button('subscription')}$"), 
             subscription_handler.handle
         ))
         self.application.add_handler(MessageHandler(
             filters.Regex(f"^{self.locale.get_button('help')}$"), 
             help_handler.handle
+        ))
+        
+        # Регистрируем обработчики для управления подпиской
+        self.application.add_handler(MessageHandler(
+            filters.Regex(f"^{self.locale.get_button('subscribe')}$"), 
+            subscription_handler.handle_subscribe
+        ))
+        self.application.add_handler(MessageHandler(
+            filters.Regex(f"^{self.locale.get_button('unsubscribe')}$"), 
+            subscription_handler.handle_unsubscribe
+        ))
+        self.application.add_handler(MessageHandler(
+            filters.Regex(f"^{self.locale.get_button('change_notification_time')}$"), 
+            subscription_handler.handle_change_time
+        ))
+        self.application.add_handler(MessageHandler(
+            filters.Regex(f"^{self.locale.get_button('back')}$"), 
+            start_handler.handle
         ))
         
         # Регистрируем ConversationHandler (должен быть после других обработчиков)

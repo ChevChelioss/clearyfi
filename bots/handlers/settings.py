@@ -27,8 +27,8 @@ class SettingsHandler(BaseHandler):
         popular_cities = [
             [self.locale.get_button("MOSCOW"), self.locale.get_button("SAINT_PETERSBURG")],
             [self.locale.get_button("EKATERINBURG"), self.locale.get_button("NOVOSIBIRSK")],
-            [self.locale.get_button("KAZAN"), self.locale.get_button("other_city")],
-            [self.locale.get_button("back")]
+            [self.locale.get_button("KAZAN"), self.locate.get_button("TYUMEN")],
+            [self.locale.get_button("other_city"), self.locale.get_button("back")]
         ]
         
         keyboard = ReplyKeyboardMarkup(popular_cities, resize_keyboard=True)

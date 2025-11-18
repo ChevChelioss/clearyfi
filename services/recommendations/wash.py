@@ -4,7 +4,7 @@
 """
 
 from typing import Dict, Any
-from datetime import datetime
+from datetime import datetime  # ДОБАВИЛИ datetime
 
 from .base import BaseRecommendationService
 from services.weather.models import WeatherForecast, ForecastDay
@@ -31,7 +31,7 @@ class WashRecommendationService(BaseRecommendationService):
             if not forecast:
                 return {
                     'success': False,
-                    'recommendation': self.locale.get_error('weather_service_error'),
+                    'recommendation': self.locale.get_message('service_unavailable'),  # ИСПРАВИЛИ: get_error -> get_message
                     'city': city,
                     'data': {}
                 }
@@ -57,7 +57,7 @@ class WashRecommendationService(BaseRecommendationService):
             logger.error(f"❌ Ошибка в сервисе рекомендаций по мойке: {e}")
             return {
                 'success': False,
-                'recommendation': self.locale.get_error('wash_recommendation_error'),
+                'recommendation': self.locale.get_message('service_unavailable'),  # ИСПРАВИЛИ
                 'city': city,
                 'data': {}
             }
@@ -128,7 +128,7 @@ class WashRecommendationService(BaseRecommendationService):
                 'wash_recommendation_excellent',
                 city=city,
                 condition=condition_ru,
-                temperature=forecast.current.temperature,
+                temperature=round(forecast.current.temperature),  # ИСПРАВИЛИ: округлили температуру
                 timestamp=get_current_timestamp()
             )
         
@@ -139,7 +139,7 @@ class WashRecommendationService(BaseRecommendationService):
                 'wash_recommendation_good',
                 city=city,
                 condition=condition_ru,
-                temperature=forecast.current.temperature,
+                temperature=round(forecast.current.temperature),  # ИСПРАВИЛИ
                 timestamp=get_current_timestamp()
             )
         
@@ -150,7 +150,7 @@ class WashRecommendationService(BaseRecommendationService):
                 'wash_recommendation_conditional',
                 city=city,
                 condition=condition_ru,
-                temperature=forecast.current.temperature,
+                temperature=round(forecast.current.temperature),  # ИСПРАВИЛИ
                 timestamp=get_current_timestamp()
             )
         
@@ -161,6 +161,6 @@ class WashRecommendationService(BaseRecommendationService):
                 'wash_recommendation_bad',
                 city=city,
                 condition=condition_ru,
-                temperature=forecast.current.temperature,
+                temperature=round(forecast.current.temperature),  # ИСПРАВИЛИ
                 timestamp=get_current_timestamp()
             )

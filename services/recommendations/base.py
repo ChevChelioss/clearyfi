@@ -5,6 +5,7 @@
 
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional
+from datetime import datetime  # ДОБАВИЛИ datetime
 
 from services.weather.openweather import OpenWeatherService
 from services.weather.models import WeatherForecast
@@ -40,18 +41,18 @@ class BaseRecommendationService(ABC):
     
     def _get_weather_data(self, city: str) -> Optional[WeatherForecast]:
         """Получает данные о погоде с кэшированием"""
-        cache_key = f"{city}_{self.__class__.__name__}"
+        cache_key = self._get_cache_key(city)
         
         # Проверяем кэш
         if cache_key in self.cache:
             cached_data, timestamp = self.cache[cache_key]
-            if (timestamp.timestamp() + self.cache_timeout) > timestamp.timestamp():
+            if (timestamp.timestamp() + self.cache_timeout) > datetime.now().timestamp():  # ИСПРАВИЛИ: datetime.now()
                 return cached_data
         
         # Получаем новые данные
         forecast = self.weather_service.get_weather_forecast(city, days=3)
         if forecast:
-            self.cache[cache_key] = (forecast, timestamp.now())
+            self.cache[cache_key] = (forecast, datetime.now())  # ИСПРАВИЛИ: datetime.now()
         
         return forecast
     
