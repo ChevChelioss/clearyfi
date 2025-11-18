@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Обработчик команды /help и кнопки помощи
+Обработчик команды /help
 """
 
 from telegram import Update
@@ -10,7 +10,7 @@ from .base import BaseHandler
 
 
 class HelpHandler(BaseHandler):
-    """Обработчик для команды /help и кнопки помощи"""
+    """Обработчик для команды /help"""
     
     async def handle(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обрабатывает команду /help"""

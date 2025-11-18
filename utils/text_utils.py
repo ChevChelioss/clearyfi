@@ -78,9 +78,13 @@ def translate_weather_conditions(condition: str) -> str:
         "Sunny": "солнечно",
         
         # Облачность
+        "Clouds": "облачно",
         "Partly cloudy": "переменная облачность",
         "Cloudy": "облачно",
         "Overcast": "пасмурно",
+        "Scattered clouds": "рассеянные облака",
+        "Broken clouds": "разорванные облака",
+        "Few clouds": "небольшая облачность",
         
         # Осадки
         "Light rain": "небольшой дождь",
@@ -92,16 +96,33 @@ def translate_weather_conditions(condition: str) -> str:
         "Sleet": "мокрый снег",
         "Freezing rain": "ледяной дождь",
         "Drizzle": "морось",
+        "Shower rain": "ливень",
+        "Rain and snow": "дождь со снегом",
         
         # Грозы
         "Thunderstorm": "гроза",
+        "Thunderstorm with rain": "гроза с дождем",
+        "Thunderstorm with heavy rain": "гроза с сильным дождем",
         
         # Туман
         "Fog": "туман",
         "Mist": "дымка",
+        "Haze": "мгла",
+        "Smoke": "дым",
         
         # Ветрено
         "Windy": "ветрено",
+        "Breezy": "свежий ветер",
+        
+        # Экстремальные условия
+        "Tornado": "торнадо",
+        "Squalls": "шквалы",
+        "Hurricane": "ураган",
+        "Cold": "холодно",
+        "Hot": "жарко",
+        "Dust": "пыльно",
+        "Sand": "песчаная буря",
+        "Ash": "вулканический пепел",
     }
     
     # Приводим к нижнему регистру для поиска
@@ -116,7 +137,7 @@ def translate_weather_conditions(condition: str) -> str:
         if key.lower() in condition_lower:
             return value
     
-    # Если не нашли, возвращаем оригинал
+    # Если не нашли, возвращаем оригинал с первой заглавной буквой
     return condition
 
 
@@ -136,4 +157,48 @@ def format_precipitation(amount: float) -> str:
     """Форматирует количество осадков"""
     if amount == 0:
         return "нет осадков"
-    return f"{amount:.1f} мм"
+    elif amount < 1:
+        return "небольшие осадки"
+    elif amount < 5:
+        return f"умеренные осадки ({amount:.1f} мм)"
+    else:
+        return f"сильные осадки ({amount:.1f} мм)"
+
+
+def translate_comfort_level(comfort_level: str) -> str:
+    """
+    Переводит уровень комфорта для вождения
+    
+    Args:
+        comfort_level: Уровень комфорта на английском
+        
+    Returns:
+        Уровень комфорта на русском
+    """
+    translation_map = {
+        'high': 'высокий',
+        'medium': 'средний', 
+        'low': 'низкий'
+    }
+    
+    return translation_map.get(comfort_level, comfort_level)
+
+
+def translate_driving_conditions(conditions: str) -> str:
+    """
+    Переводит условия для вождения
+    
+    Args:
+        conditions: Условия на английском
+        
+    Returns:
+        Условия на русском
+    """
+    translation_map = {
+        'good': 'хорошие',
+        'moderate': 'умеренные',
+        'difficult': 'сложные',
+        'windy': 'ветреные'
+    }
+    
+    return translation_map.get(conditions, conditions)

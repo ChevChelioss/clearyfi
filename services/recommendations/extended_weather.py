@@ -9,7 +9,13 @@ from datetime import datetime, timedelta
 from .base import BaseRecommendationService
 from services.weather.models import WeatherForecast, ForecastDay
 from utils.date_utils import get_current_timestamp, format_date_short
-from utils.text_utils import translate_weather_conditions, format_wind_speed, format_precipitation
+from utils.text_utils import (
+    translate_weather_conditions, 
+    format_wind_speed, 
+    format_precipitation,
+    translate_comfort_level,
+    translate_driving_conditions
+)
 from core.logger import logger
 
 
@@ -270,27 +276,31 @@ class ExtendedWeatherService(BaseRecommendationService):
     def _assess_driving_conditions(self, day: ForecastDay) -> str:
         """Оценивает условия для вождения на конкретный день"""
         if day.precipitation_amount > 5:
-            return "сложные"
+            return "difficult"
         elif day.precipitation_amount > 0:
-            return "умеренные"
+            return "moderate"
         elif day.wind_speed > 10:
-            return "ветреные"
+            return "windy"
         else:
-            return "хорошие"
+            return "good"
     
     def _build_recommendation_text(self, city: str, analysis: Dict[str, Any], forecast: WeatherForecast) -> str:
         """Строит текст расширенной погодной рекомендации"""
         current = forecast.current
         condition_ru = translate_weather_conditions(current.condition)
         temperature = round(current.temperature)
+        comfort_level_ru = translate_comfort_level(analysis['current_analysis']['comfort_level'])
         
         # Формируем прогноз на дни
         forecast_text = ""
         for day_analysis in analysis['forecast_analysis'][:3]:  # 3 дня
+            day_condition_ru = translate_weather_conditions(day_analysis['condition'])
+            driving_conditions_ru = translate_driving_conditions(day_analysis['driving_conditions'])
+            
             forecast_text += (
                 f"• {day_analysis['day']}: {day_analysis['temp_day']:.0f}°C, "
-                f"{translate_weather_conditions(day_analysis['condition'])}, "
-                f"вождение: {day_analysis['driving_conditions']}\n"
+                f"{day_condition_ru}, "
+                f"вождение: {driving_conditions_ru}\n"
             )
         
         # Опасные явления
@@ -315,6 +325,6 @@ class ExtendedWeatherService(BaseRecommendationService):
             hazards_text=hazards_text,
             driver_text=driver_text,
             preparation_text=preparation_text,
-            comfort_level=analysis['current_analysis']['comfort_level'],
+            comfort_level=comfort_level_ru,  # Используем переведенный уровень комфорта
             timestamp=get_current_timestamp()
         )

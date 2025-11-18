@@ -73,6 +73,9 @@ class BaseHandler(ABC):
             ],
             [
                 self.locale.get_button('KAZAN'),
+                self.locale.get_button('TYUMEN')  # ДОБАВЛЕНА ТЮМЕНЬ
+            ],
+            [
                 self.locale.get_button('OTHER_CITY')
             ],
             [
