@@ -45,7 +45,6 @@ class WashHandler(BaseHandler):
                 update,
                 result["recommendation"],
                 reply_markup=self.get_main_keyboard(),
-                parse_mode='Markdown'
             )
         else:
             # Если сервис вернул ошибку, отправляем сообщение об ошибке

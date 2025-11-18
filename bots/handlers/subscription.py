@@ -51,7 +51,6 @@ class SubscriptionHandler(BaseHandler):
             update,
             message,
             reply_markup=subscription_keyboard,
-            parse_mode='Markdown'
         )
     
     async def handle_subscribe(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -64,7 +63,6 @@ class SubscriptionHandler(BaseHandler):
             update,
             result['message'],
             reply_markup=self.get_main_keyboard(),
-            parse_mode='Markdown'
         )
     
     async def handle_unsubscribe(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -77,7 +75,6 @@ class SubscriptionHandler(BaseHandler):
             update,
             result['message'],
             reply_markup=self.get_main_keyboard(),
-            parse_mode='Markdown'
         )
     
     async def handle_change_time(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -96,5 +93,4 @@ class SubscriptionHandler(BaseHandler):
             update,
             message,
             reply_markup=self.get_main_keyboard(),
-            parse_mode='Markdown'
         )

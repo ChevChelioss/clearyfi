@@ -51,7 +51,7 @@ class SettingsHandler(BaseHandler):
             if city == self.locale.get_button('OTHER_CITY'):
                 await update.message.reply_text(
                     self.locale.get_message("city_input"),
-                    parse_mode='Markdown'
+#                    parse_mode='Markdown'
                 )
                 return CITY_SELECTION
             else:
@@ -62,7 +62,7 @@ class SettingsHandler(BaseHandler):
                     await update.message.reply_text(
                         self.locale.get_message("city_set_success", city=city),
                         reply_markup=self.get_main_keyboard(),
-                        parse_mode='Markdown'
+ #                       parse_mode='Markdown'
                     )
                 else:
                     await update.message.reply_text(
@@ -79,7 +79,7 @@ class SettingsHandler(BaseHandler):
                 await update.message.reply_text(
                     self.locale.get_message("city_set_success", city=city),
                     reply_markup=self.get_main_keyboard(),
-                    parse_mode='Markdown'
+#                    parse_mode='Markdown'
                 )
             else:
                 await update.message.reply_text(

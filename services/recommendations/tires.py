@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Сервис рекомендаций по шинам и шиномонтажу
+Сервис рекомендаций по шинам и шиномонтажу с интеграцией DeepSeek AI
 """
 
 from typing import Dict, Any, List
@@ -12,28 +12,33 @@ from utils.date_utils import get_current_timestamp
 from utils.text_utils import translate_weather_conditions
 from core.logger import logger
 
+# Импортируем DeepSeek сервис
+try:
+    from services.ai.deepseek_service import DeepSeekService
+    DEEPSEEK_AVAILABLE = True
+except ImportError:
+    DEEPSEEK_AVAILABLE = False
+    logger.warning("❌ DeepSeekService недоступен")
+
 
 class TireRecommendationService(BaseRecommendationService):
-    """Сервис рекомендаций по шинам и шиномонтажу"""
+    """Сервис рекомендаций по шинам и шиномонтажу с AI"""
+    
+    def __init__(self, weather_service, locale_manager, deepseek_api_key: str = None):
+        super().__init__(weather_service, locale_manager)
+        self.deepseek_service = None
+        
+        if DEEPSEEK_AVAILABLE and deepseek_api_key:
+            try:
+                self.deepseek_service = DeepSeekService(deepseek_api_key)
+                logger.info("✅ DeepSeekService инициализирован для рекомендаций по шинам")
+            except Exception as e:
+                logger.error(f"❌ Ошибка инициализации DeepSeekService: {e}")
+                self.deepseek_service = None
     
     def get_recommendation(self, city: str) -> Dict[str, Any]:
         """
         Возвращает рекомендацию по шинам для указанного города.
-        
-        Логика рекомендаций:
-        - Сезонная смена: летняя/зимняя резина
-        - Давление в шинах: рекомендации по температуре
-        - Шиномонтаж: рекомендации по погодным условиям
-        
-        Args:
-            city: Название города
-            
-        Returns:
-            Словарь с результатом:
-            - success: bool - успех операции
-            - recommendation: str - текст рекомендации
-            - city: str - город
-            - data: Dict - дополнительные данные
         """
         try:
             forecast = self._get_weather_data(city)
@@ -48,7 +53,19 @@ class TireRecommendationService(BaseRecommendationService):
             
             # Анализируем условия для шин
             analysis = self._analyze_tire_conditions(forecast)
-            recommendation_text = self._build_recommendation_text(city, analysis, forecast)
+            
+            # Если доступен AI, получаем улучшенную рекомендацию
+            ai_recommendation = None
+            if self.deepseek_service and self.deepseek_service.is_available():
+                weather_data = self._prepare_weather_data(forecast, city, analysis)
+                ai_recommendation = self.deepseek_service.get_recommendation(weather_data, "tires")
+            
+            # Строим финальную рекомендацию
+            if ai_recommendation:
+                recommendation_text = self._build_ai_recommendation_text(city, analysis, ai_recommendation, forecast)
+            else:
+                recommendation_text = self._build_recommendation_text(city, analysis, forecast)
+            
             timestamp = get_current_timestamp()
             
             return {
@@ -59,7 +76,8 @@ class TireRecommendationService(BaseRecommendationService):
                     'analysis': analysis,
                     'timestamp': timestamp,
                     'weather_condition': forecast.current.condition,
-                    'temperature': forecast.current.temperature
+                    'temperature': forecast.current.temperature,
+                    'ai_enhanced': ai_recommendation is not None
                 }
             }
             
@@ -76,33 +94,45 @@ class TireRecommendationService(BaseRecommendationService):
         """Анализирует условия для рекомендаций по шинам"""
         current_temp = forecast.current.temperature
         today = forecast.get_today_forecast()
-        tomorrow = forecast.get_tomorrow_forecast()
         
         # Определяем сезонность
         if current_temp < 5:
             season = 'winter'
             season_emoji = '❄️'
             season_text = 'зимний'
+            change_recommended = True
         elif current_temp > 15:
             season = 'summer' 
             season_emoji = '☀️'
             season_text = 'летний'
+            change_recommended = True
         else:
             season = 'transition'
             season_emoji = '🔄'
             season_text = 'переходный'
-        
-        # Проверяем, нужно ли менять резину
-        change_recommended = self._should_change_tires(season, forecast)
+            change_recommended = False
         
         # Рекомендации по давлению
-        pressure_recommendation = self._get_pressure_recommendation(current_temp)
+        if current_temp < 0:
+            pressure_recommendation = "⚠️ Проверьте давление: при морозе оно снижается"
+        elif current_temp > 25:
+            pressure_recommendation = "🌡️ Будьте осторожны: в жару давление может повыситься"
+        else:
+            pressure_recommendation = "✅ Давление в норме"
         
         # Рекомендации по шиномонтажу
-        service_recommendation = self._get_service_recommendation(forecast)
+        if today and today.precipitation_amount > 0:
+            service_recommendation = "❌ Сегодня не лучшее время для шиномонтажа из-за осадков"
+        else:
+            service_recommendation = "✅ Хорошие условия для шиномонтажа"
         
         # Оценка срочности
-        urgency = self._calculate_urgency(season, forecast)
+        if (season == 'winter' and current_temp < 0) or (season == 'summer' and current_temp > 20):
+            urgency = "high"
+        elif (season == 'winter' and current_temp < 3) or (season == 'summer' and current_temp > 15):
+            urgency = "medium"
+        else:
+            urgency = "low"
         
         return {
             'season': season,
@@ -115,58 +145,46 @@ class TireRecommendationService(BaseRecommendationService):
             'current_temperature': current_temp
         }
     
-    def _should_change_tires(self, season: str, forecast: WeatherForecast) -> bool:
-        """Определяет, рекомендуется ли смена шин"""
-        # Если сейчас зима и температура ниже 5, то зимняя резина
-        # Если лето и температура выше 15, то летняя
-        # В переходный период (5-15) смотрим прогноз на неделю
-        if season == 'winter':
-            # Проверяем, что в ближайшие дни не ожидается потепление выше 7
-            for day in forecast.daily[:3]:
-                if day.temperature_max > 7:
-                    return False
-            return True
-        elif season == 'summer':
-            # Проверяем, что в ближайшие дни не ожидается похолодание ниже 10
-            for day in forecast.daily[:3]:
-                if day.temperature_min < 10:
-                    return False
-            return True
-        else:
-            # В переходный период не рекомендуем смену, если нет устойчивого тренда
-            return False
-    
-    def _get_pressure_recommendation(self, temperature: float) -> str:
-        """Возвращает рекомендацию по давлению в шинах"""
-        # При понижении температуры давление падает, и наоборот
-        if temperature < 0:
-            return "⚠️ Проверьте давление: при морозе оно снижается"
-        elif temperature > 25:
-            return "🌡️ Будьте осторожны: в жару давление может повыситься"
-        else:
-            return "✅ Давление в норме"
-    
-    def _get_service_recommendation(self, forecast: WeatherForecast) -> str:
-        """Возвращает рекомендацию по шиномонтажу"""
-        # Если ожидается дождь или снег, не рекомендуется шиномонтаж
+    def _prepare_weather_data(self, forecast: WeatherForecast, city: str, analysis: Dict[str, Any]) -> Dict[str, Any]:
+        """Подготавливает данные о погоде для AI"""
         today = forecast.get_today_forecast()
-        if today and today.precipitation_amount > 0:
-            return "❌ Сегодня не лучшее время для шиномонтажа из-за осадков"
-        else:
-            return "✅ Хорошие условия для шиномонтажа"
-    
-    def _calculate_urgency(self, season: str, forecast: WeatherForecast) -> str:
-        """Определяет срочность рекомендаций"""
-        current_temp = forecast.current.temperature
         
-        if season == 'winter' and current_temp < 0:
-            return "high"  # Высокая срочность - уже морозы
-        elif season == 'summer' and current_temp > 20:
-            return "high"  # Высокая срочность - уже жара
-        elif (season == 'winter' and current_temp < 3) or (season == 'summer' and current_temp > 15):
-            return "medium"  # Средняя срочность - скоро смена
-        else:
-            return "low"  # Низкая срочность
+        forecast_data = []
+        for i, day in enumerate(forecast.daily[:3]):
+            forecast_data.append({
+                'day': i,
+                'condition': day.condition,
+                'temperature': day.temperature_day,
+                'precipitation': day.precipitation_amount,
+                'wind_speed': day.wind_speed
+            })
+        
+        return {
+            'city': city,
+            'current': {
+                'temperature': forecast.current.temperature,
+                'condition': forecast.current.condition,
+                'precipitation': today.precipitation_amount if today else 0,
+            },
+            'forecast': forecast_data,
+            'season': analysis['season'],
+            'change_recommended': analysis['change_recommended'],
+            'urgency': analysis['urgency']
+        }
+    
+    def _build_ai_recommendation_text(self, city: str, analysis: Dict[str, Any], 
+                                    ai_recommendation: str, forecast: WeatherForecast) -> str:
+        """Строит рекомендацию с использованием AI"""
+        condition_ru = translate_weather_conditions(forecast.current.condition)
+        temperature = round(forecast.current.temperature)
+        
+        base_text = f"🛞 *Умная рекомендация по шинам для {city}*\n\n"
+        base_text += f"🌤️ Сейчас: {condition_ru}, {temperature}°C\n\n"
+        base_text += "🤖 *Рекомендация AI-эксперта:*\n\n"
+        base_text += f"{ai_recommendation}\n\n"
+        base_text += f"_Обновлено: {get_current_timestamp()}_"
+        
+        return base_text
     
     def _build_recommendation_text(self, city: str, analysis: Dict[str, Any], forecast: WeatherForecast) -> str:
         """Строит текст рекомендации по шинам"""

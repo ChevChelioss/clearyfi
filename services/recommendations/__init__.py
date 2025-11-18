@@ -6,8 +6,8 @@
 from .wash import WashRecommendationService
 from .tires import TireRecommendationService
 from .roads import RoadConditionService
-from .maintenance import MaintenanceService           # НОВЫЙ ИМПОРТ
-from .extended_weather import ExtendedWeatherService  # НОВЫЙ ИМПОРТ
+from .maintenance import MaintenanceService
+from .extended_weather import ExtendedWeatherService
 
 __all__ = [
     'WashRecommendationService',

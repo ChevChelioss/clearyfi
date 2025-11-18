@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Сервис рекомендаций по техническому обслуживанию автомобиля
+Сервис рекомендаций по техническому обслуживанию автомобиля с интеграцией DeepSeek AI
 """
 
 from typing import Dict, Any, List
@@ -12,30 +12,35 @@ from utils.date_utils import get_current_timestamp
 from utils.text_utils import translate_weather_conditions
 from core.logger import logger
 
+# Импортируем DeepSeek сервис
+try:
+    from services.ai.deepseek_service import DeepSeekService
+    DEEPSEEK_AVAILABLE = True
+except ImportError:
+    DEEPSEEK_AVAILABLE = False
+    logger.warning("❌ DeepSeekService недоступен")
+
 
 class MaintenanceService(BaseRecommendationService):
-    """Сервис рекомендаций по техническому обслуживанию автомобиля"""
+    """Сервис рекомендаций по техническому обслуживанию автомобиля с AI"""
     
-    def __init__(self, weather_service, locale_manager, database):
+    def __init__(self, weather_service, locale_manager, database, deepseek_api_key: str = None):
         super().__init__(weather_service, locale_manager)
         self.database = database
         self.maintenance_schedule = self._get_maintenance_schedule()
+        self.deepseek_service = None
+        
+        if DEEPSEEK_AVAILABLE and deepseek_api_key:
+            try:
+                self.deepseek_service = DeepSeekService(deepseek_api_key)
+                logger.info("✅ DeepSeekService инициализирован для технического обслуживания")
+            except Exception as e:
+                logger.error(f"❌ Ошибка инициализации DeepSeekService: {e}")
+                self.deepseek_service = None
     
     def get_recommendation(self, city: str) -> Dict[str, Any]:
         """
         Возвращает рекомендацию по техническому обслуживанию
-        
-        Логика рекомендаций:
-        - Сезонное обслуживание
-        - Рекомендации по жидкостям
-        - Проверка систем автомобиля
-        - Напоминания о ТО
-        
-        Args:
-            city: Название города
-            
-        Returns:
-            Словарь с результатом
         """
         try:
             forecast = self._get_weather_data(city)
@@ -50,7 +55,19 @@ class MaintenanceService(BaseRecommendationService):
             
             # Анализируем условия для ТО
             analysis = self._analyze_maintenance_conditions(forecast)
-            recommendation_text = self._build_recommendation_text(city, analysis, forecast)
+            
+            # Если доступен AI, получаем улучшенную рекомендацию
+            ai_recommendation = None
+            if self.deepseek_service and self.deepseek_service.is_available():
+                weather_data = self._prepare_weather_data(forecast, city, analysis)
+                ai_recommendation = self.deepseek_service.get_recommendation(weather_data, "maintenance")
+            
+            # Строим финальную рекомендацию
+            if ai_recommendation:
+                recommendation_text = self._build_ai_recommendation_text(city, analysis, ai_recommendation, forecast)
+            else:
+                recommendation_text = self._build_recommendation_text(city, analysis, forecast)
+            
             timestamp = get_current_timestamp()
             
             return {
@@ -61,7 +78,8 @@ class MaintenanceService(BaseRecommendationService):
                     'analysis': analysis,
                     'timestamp': timestamp,
                     'weather_condition': forecast.current.condition,
-                    'temperature': forecast.current.temperature
+                    'temperature': forecast.current.temperature,
+                    'ai_enhanced': ai_recommendation is not None
                 }
             }
             
@@ -213,6 +231,45 @@ class MaintenanceService(BaseRecommendationService):
                 return "high"
         
         return "medium" if len(seasonal_recs) > 3 else "low"
+    
+    def _prepare_weather_data(self, forecast: WeatherForecast, city: str, analysis: Dict[str, Any]) -> Dict[str, Any]:
+        """Подготавливает данные о погоде для AI"""
+        today = forecast.get_today_forecast()
+        
+        forecast_data = []
+        for i, day in enumerate(forecast.daily[:3]):
+            forecast_data.append({
+                'day': i,
+                'condition': day.condition,
+                'temperature': day.temperature_day,
+                'precipitation': day.precipitation_amount,
+            })
+        
+        return {
+            'city': city,
+            'current': {
+                'temperature': forecast.current.temperature,
+                'condition': forecast.current.condition,
+            },
+            'forecast': forecast_data,
+            'season': analysis['season'],
+            'urgency': analysis['urgency'],
+            'fluid_recommendations': analysis['fluid_recommendations']
+        }
+    
+    def _build_ai_recommendation_text(self, city: str, analysis: Dict[str, Any], 
+                                    ai_recommendation: str, forecast: WeatherForecast) -> str:
+        """Строит рекомендацию с использованием AI"""
+        condition_ru = translate_weather_conditions(forecast.current.condition)
+        temperature = round(forecast.current.temperature)
+        
+        base_text = f"🔧 *Умная рекомендация по ТО для {city}*\n\n"
+        base_text += f"🌤️ Сейчас: {condition_ru}, {temperature}°C\n\n"
+        base_text += "🤖 *Рекомендация AI-эксперта:*\n\n"
+        base_text += f"{ai_recommendation}\n\n"
+        base_text += f"_Обновлено: {get_current_timestamp()}_"
+        
+        return base_text
     
     def _build_recommendation_text(self, city: str, analysis: Dict[str, Any], forecast: WeatherForecast) -> str:
         """Строит текст рекомендации по ТО"""

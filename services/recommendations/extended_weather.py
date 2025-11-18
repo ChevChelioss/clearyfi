@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Сервис расширенных погодных рекомендаций для автомобилистов
+Сервис расширенных погодных рекомендаций для автомобилистов с интеграцией DeepSeek AI
 """
 
 from typing import Dict, Any, List
@@ -18,25 +18,33 @@ from utils.text_utils import (
 )
 from core.logger import logger
 
+# Импортируем DeepSeek сервис
+try:
+    from services.ai.deepseek_service import DeepSeekService
+    DEEPSEEK_AVAILABLE = True
+except ImportError:
+    DEEPSEEK_AVAILABLE = False
+    logger.warning("❌ DeepSeekService недоступен")
+
 
 class ExtendedWeatherService(BaseRecommendationService):
-    """Сервис расширенных погодных рекомендаций для автомобилистов"""
+    """Сервис расширенных погодных рекомендаций для автомобилистов с AI"""
+    
+    def __init__(self, weather_service, locale_manager, deepseek_api_key: str = None):
+        super().__init__(weather_service, locale_manager)
+        self.deepseek_service = None
+        
+        if DEEPSEEK_AVAILABLE and deepseek_api_key:
+            try:
+                self.deepseek_service = DeepSeekService(deepseek_api_key)
+                logger.info("✅ DeepSeekService инициализирован для расширенной погоды")
+            except Exception as e:
+                logger.error(f"❌ Ошибка инициализации DeepSeekService: {e}")
+                self.deepseek_service = None
     
     def get_recommendation(self, city: str) -> Dict[str, Any]:
         """
         Возвращает расширенную погодную рекомендацию для автомобилиста
-        
-        Логика рекомендаций:
-        - Детальный прогноз на несколько дней
-        - Специфические рекомендации для водителей
-        - Предупреждения об опасных явлениях
-        - Советы по подготовке автомобиля
-        
-        Args:
-            city: Название города
-            
-        Returns:
-            Словарь с результатом
         """
         try:
             forecast = self._get_weather_data(city)
@@ -51,7 +59,19 @@ class ExtendedWeatherService(BaseRecommendationService):
             
             # Анализируем расширенные погодные условия
             analysis = self._analyze_extended_weather(forecast)
-            recommendation_text = self._build_recommendation_text(city, analysis, forecast)
+            
+            # Если доступен AI, получаем улучшенную рекомендацию
+            ai_recommendation = None
+            if self.deepseek_service and self.deepseek_service.is_available():
+                weather_data = self._prepare_weather_data(forecast, city, analysis)
+                ai_recommendation = self.deepseek_service.get_recommendation(weather_data, "car_wash")
+            
+            # Строим финальную рекомендацию
+            if ai_recommendation:
+                recommendation_text = self._build_ai_recommendation_text(city, analysis, ai_recommendation, forecast)
+            else:
+                recommendation_text = self._build_recommendation_text(city, analysis, forecast)
+            
             timestamp = get_current_timestamp()
             
             return {
@@ -62,7 +82,8 @@ class ExtendedWeatherService(BaseRecommendationService):
                     'analysis': analysis,
                     'timestamp': timestamp,
                     'weather_condition': forecast.current.condition,
-                    'temperature': forecast.current.temperature
+                    'temperature': forecast.current.temperature,
+                    'ai_enhanced': ai_recommendation is not None
                 }
             }
             
@@ -284,6 +305,49 @@ class ExtendedWeatherService(BaseRecommendationService):
         else:
             return "good"
     
+    def _prepare_weather_data(self, forecast: WeatherForecast, city: str, analysis: Dict[str, Any]) -> Dict[str, Any]:
+        """Подготавливает данные о погоде для AI"""
+        current = forecast.current
+        
+        forecast_data = []
+        for i, day in enumerate(forecast.daily[:3]):
+            forecast_data.append({
+                'day': i,
+                'condition': day.condition,
+                'temperature': day.temperature_day,
+                'precipitation': day.precipitation_amount,
+                'wind_speed': day.wind_speed
+            })
+        
+        return {
+            'city': city,
+            'current': {
+                'temperature': current.temperature,
+                'feels_like': current.feels_like,
+                'condition': current.condition,
+                'humidity': current.humidity,
+                'wind_speed': current.wind_speed,
+                'visibility': current.visibility
+            },
+            'forecast': forecast_data,
+            'comfort_level': analysis['current_analysis']['comfort_level'],
+            'hazards': [h['type'] for h in analysis['hazards']]
+        }
+    
+    def _build_ai_recommendation_text(self, city: str, analysis: Dict[str, Any], 
+                                    ai_recommendation: str, forecast: WeatherForecast) -> str:
+        """Строит рекомендацию с использованием AI"""
+        condition_ru = translate_weather_conditions(forecast.current.condition)
+        temperature = round(forecast.current.temperature)
+        
+        base_text = f"🌤️ *Умная расширенная погода для {city}*\n\n"
+        base_text += f"🌤️ Сейчас: {condition_ru}, {temperature}°C\n\n"
+        base_text += "🤖 *Рекомендация AI-эксперта:*\n\n"
+        base_text += f"{ai_recommendation}\n\n"
+        base_text += f"_Обновлено: {get_current_timestamp()}_"
+        
+        return base_text
+    
     def _build_recommendation_text(self, city: str, analysis: Dict[str, Any], forecast: WeatherForecast) -> str:
         """Строит текст расширенной погодной рекомендации"""
         current = forecast.current
@@ -325,6 +389,6 @@ class ExtendedWeatherService(BaseRecommendationService):
             hazards_text=hazards_text,
             driver_text=driver_text,
             preparation_text=preparation_text,
-            comfort_level=comfort_level_ru,  # Используем переведенный уровень комфорта
+            comfort_level=comfort_level_ru,
             timestamp=get_current_timestamp()
         )

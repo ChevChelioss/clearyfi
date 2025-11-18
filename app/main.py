@@ -63,19 +63,60 @@ class ClearyFiApp:
         self.services['weather'] = OpenWeatherService(self.config.weather.api_key)
         logger.info("✅ Погодный сервис инициализирован")
         
-        # Сервисы рекомендаций
+        # Основные сервисы рекомендаций с поддержкой DeepSeek
         self.services['wash'] = WashRecommendationService(
             self.services['weather'],
             self.locale,
-            self.config.ai.deepseek_api_key  # Передаем API ключ для AI
+            self.config.ai.deepseek_api_key
         )
         logger.info("✅ Сервис рекомендаций по мойке инициализирован")
         
+        self.services['tires'] = TireRecommendationService(
+            self.services['weather'],
+            self.locale,
+            self.config.ai.deepseek_api_key
+        )
+        logger.info("✅ Сервис рекомендаций по шинам инициализирован")
+        
+        self.services['roads'] = RoadConditionService(
+            self.services['weather'],
+            self.locale,
+            self.config.ai.deepseek_api_key
+        )
+        logger.info("✅ Сервис дорожных условий инициализирован")
+        
+        self.services['maintenance'] = MaintenanceService(
+            self.services['weather'],
+            self.locale,
+            self.database,
+            self.config.ai.deepseek_api_key
+        )
+        logger.info("✅ Сервис технического обслуживания инициализирован")
+        
+        self.services['extended_weather'] = ExtendedWeatherService(
+            self.services['weather'],
+            self.locale,
+            self.config.ai.deepseek_api_key
+        )
+        logger.info("✅ Сервис расширенных погодных рекомендаций инициализирован")
+        
+        # Сервис подписки (зависит от других сервисов)
+        self.services['subscription'] = SubscriptionService(
+            self.database,
+            self.services['weather'],
+            self.services['wash'],
+            self.services['tires'], 
+            self.services['roads'],
+            self.locale
+        )
+        logger.info("✅ Сервис управления подпиской инициализирован")
+        
+        # Статус AI
         if self.config.ai.enabled:
-            logger.info("🤖 AI-рекомендации активированы")
-        
-        # ... остальные сервисы ...
-        
+            logger.info("🤖 AI-рекомендации активированы для всех сервисов")
+        else:
+            logger.info("🤖 AI-рекомендации отключены (нет API ключа)")
+    
     def run(self):
         """Запускает приложение"""
         try:
